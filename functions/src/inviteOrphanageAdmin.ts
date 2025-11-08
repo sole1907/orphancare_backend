@@ -51,12 +51,12 @@ export const inviteOrphanageAdmin = onRequest(
       const apiInstance = new Brevo.TransactionalEmailsApi();
 
       await apiInstance.sendTransacEmail({
-        sender: { email: "noreply@hopebridge.org", name: "HopeBridge" },
+        sender: { email: "noreply@orphancare.org", name: "Orphancare" },
         to: [{ email }],
         subject: "Complete your Orphanage Admin registration",
         htmlContent: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background-color: #f9f9f9; border-radius: 8px;">
-            <h2 style="color: #1e3a8a;">Welcome to HopeBridge</h2>
+            <h2 style="color: #1e3a8a;">Welcome to Orphancare</h2>
             <p>Hello,</p>
             <p>You’ve been invited to manage your orphanage on <strong>HopeBridge</strong>.</p>
             <p>Please click the button below to complete your registration and set your password:</p>
