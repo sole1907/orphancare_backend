@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Orphanages: only superAdmins can read/write, orphanage admins can read
+    match /orphanages/{id} {
+        allow read, write: if request.auth.token.superAdmin == true;
+        allow read: if request.auth.token.orphanageAdmin == true &&
+               request.auth.token.orphanageId == id;
+    }
+
+    // Children: orphanageAdmins can read/write their own orphanage's children
+    match /children/{id} {
+        allow read, write: if (
+            request.auth.token.superAdmin == true ||
+            (request.auth.token.orphanageAdmin == true &&
+            resource.data.orphanageId == request.auth.token.orphanageId)
+        );
+    }
+
+    // Donors: donors can read/write their own profile, super admins can read donors profile
+    match /donors/{id} {
+        allow read: if request.auth.uid == id || request.auth.token.superAdmin == true;
+        allow write: if request.auth.uid == id;
+    }
+
+
+    // Updates: orphanageAdmins can create, donors can read
+    match /updates/{id} {
+      allow create: if request.auth.token.orphanageAdmin == true
+  && request.resource.data.orphanageId == request.auth.token.orphanageId;
+      allow read: if request.auth.token.donor == true;
+    }
+
+    // Payments: donors can create, superAdmins & orphanageAdmins can read
+    match /payments/{id} {
+        allow create: if request.auth.token.donor == true;
+
+        allow read: if (
+            request.auth.token.superAdmin == true ||
+            request.auth.token.donor == true && request.auth.uid == resource.data.donorId ||
+            request.auth.token.orphanageAdmin == true && resource.data.orphanageId == request.auth.token.orphanageId
+        );
+    }
+
+  }
+}

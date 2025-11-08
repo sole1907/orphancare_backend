@@ -1,0 +1,17 @@
+[
+  {
+    "email": "superadmin@orphancare.com",
+    "password": "Secure123!",
+    "role": "superAdmin"
+  },
+  {
+    "email": "orphanageadmin@orphancare.com",
+    "password": "Secure123!",
+    "role": "orphanageAdmin"
+  },
+  {
+    "email": "donor@orphancare.com",
+    "password": "Secure123!",
+    "role": "donor"
+  }
+]
