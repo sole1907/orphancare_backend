@@ -10,9 +10,11 @@ export const inviteOrphanageAdmin = onRequest(
   { region: "europe-west1" },
   async (req, res) => {
     try {
+      logger.info("inviteOrphanageAdmin triggered");
       const { email, orphanageId } = req.body;
       if (!email || !orphanageId) {
         res.status(400).send("Missing email or orphanageId");
+        logger.error("Missing email or orphanageId");
         return;
       }
 
@@ -34,7 +36,9 @@ export const inviteOrphanageAdmin = onRequest(
 
       // Generate sign-in link
       const actionCodeSettings = {
-        url: "https://hopebridge.vercel.app/complete-registration",
+        url:
+          process.env.REGISTRATION_REDIRECT_URL ||
+          "https://localhost:3000/complete-registration",
         handleCodeInApp: true,
       };
       const link = await auth.generateSignInWithEmailLink(
@@ -42,6 +46,7 @@ export const inviteOrphanageAdmin = onRequest(
         actionCodeSettings
       );
 
+      logger.info("Sending invite");
       // Send email via Brevo
       const client = Brevo.ApiClient.instance;
       client.authentications["api-key"].apiKey = process.env.FIREBASE_CONFIG
