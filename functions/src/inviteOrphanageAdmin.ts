@@ -23,7 +23,7 @@ export const inviteOrphanageAdmin = onRequest(
 
     if (req.method === "OPTIONS") {
       logger.info("Preflight request received FROM ", origin);
-      res.status(204).send(""); // No content for preflight
+      res.status(204).end("");
       return;
     }
 
