@@ -36,11 +36,13 @@ export const inviteOrphanageAdmin = onRequest(
 
       // Generate sign-in link
       const actionCodeSettings = {
-        url:
+        url: `${
           process.env.REGISTRATION_REDIRECT_URL ||
-          "https://localhost:3000/complete-registration",
+          "https://localhost:3000/complete-registration"
+        }?email=${encodeURIComponent(email)}`,
         handleCodeInApp: true,
       };
+
       const link = await auth.generateSignInWithEmailLink(
         email,
         actionCodeSettings
