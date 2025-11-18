@@ -22,6 +22,7 @@ export const inviteOrphanageAdmin = onRequest(
     res.set("Access-Control-Allow-Headers", "Content-Type");
 
     if (req.method === "OPTIONS") {
+      logger.info("Preflight request received FROM ", origin);
       res.status(204).send(""); // No content for preflight
       return;
     }
