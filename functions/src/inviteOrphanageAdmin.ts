@@ -19,7 +19,7 @@ export const inviteOrphanageAdmin = onRequest(
       res.set("Access-Control-Allow-Origin", origin);
     }
     res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.set("Access-Control-Allow-Headers", "Content-Type");
+    res.set("Access-Control-Allow-Headers", "*");
 
     if (req.method === "OPTIONS") {
       logger.info("Preflight request received FROM ", origin);
