@@ -9,6 +9,23 @@ initializeApp();
 export const inviteOrphanageAdmin = onRequest(
   { region: "europe-west1" },
   async (req, res) => {
+    const allowedOrigins = [
+      "https://orphancare-93b41.web.app",
+      "http://localhost:3000",
+    ];
+
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.includes(origin)) {
+      res.set("Access-Control-Allow-Origin", origin);
+    }
+    res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.set("Access-Control-Allow-Headers", "Content-Type");
+
+    if (req.method === "OPTIONS") {
+      res.status(204).send(""); // No content for preflight
+      return;
+    }
+
     try {
       logger.info("inviteOrphanageAdmin triggered");
       const { email, orphanageId } = req.body;
@@ -20,7 +37,6 @@ export const inviteOrphanageAdmin = onRequest(
 
       const auth = getAuth();
 
-      // Ensure user exists or create them
       let user;
       try {
         user = await auth.getUserByEmail(email);
@@ -28,13 +44,11 @@ export const inviteOrphanageAdmin = onRequest(
         user = await auth.createUser({ email });
       }
 
-      // Set custom claims
       await auth.setCustomUserClaims(user.uid, {
         orphanageAdmin: true,
         orphanageId,
       });
 
-      // Generate sign-in link
       const actionCodeSettings = {
         url: `${
           process.env.REGISTRATION_REDIRECT_URL ||
@@ -48,8 +62,6 @@ export const inviteOrphanageAdmin = onRequest(
         actionCodeSettings
       );
 
-      logger.info("Sending invite");
-      // Send email via Brevo
       const client = Brevo.ApiClient.instance;
       client.authentications["api-key"].apiKey = process.env.FIREBASE_CONFIG
         ? JSON.parse(process.env.FIREBASE_CONFIG).brevo?.apikey
