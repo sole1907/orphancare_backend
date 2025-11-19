@@ -1,10 +1,8 @@
 import * as functions from "firebase-functions";
-import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import * as logger from "firebase-functions/logger";
 import Brevo from "sib-api-v3-sdk";
-
-initializeApp();
+import "./firebaseAdmin";
 
 export const inviteOrphanageAdmin = functions
   .region("europe-west1")

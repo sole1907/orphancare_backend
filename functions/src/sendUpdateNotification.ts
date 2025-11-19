@@ -1,8 +1,6 @@
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
-import { initializeApp } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
-
-initializeApp();
+import "./firebaseAdmin";
 
 export const sendUpdateNotification = onDocumentCreated(
   {
