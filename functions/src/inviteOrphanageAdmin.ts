@@ -1,4 +1,4 @@
-import { onRequest } from "firebase-functions/v2/https";
+import * as functions from "firebase-functions";
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import * as logger from "firebase-functions/logger";
@@ -6,9 +6,9 @@ import Brevo from "sib-api-v3-sdk";
 
 initializeApp();
 
-export const inviteOrphanageAdmin = onRequest(
-  { region: "europe-west1" },
-  async (req, res) => {
+export const inviteOrphanageAdmin = functions
+  .region("europe-west1")
+  .https.onRequest(async (req, res) => {
     logger.info("Incoming headers:\n" + JSON.stringify(req.headers, null, 2));
 
     const allowedOrigins = [
@@ -94,5 +94,4 @@ export const inviteOrphanageAdmin = onRequest(
       logger.error("Invite error", error);
       res.status(500).send("Internal error");
     }
-  }
-);
+  });
