@@ -17,11 +17,13 @@ jobs:
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
-      - name: Install Functions Dependencies
-        run: cd functions && npm install
-
-      - name: Deploy Functions and Rules
+      - name: Install Dependencies and Build
         run: |
-          firebase deploy --only functions,firestore:rules,firestore:indexes --project orphancare-93b41
+          npm install
+          rm -rf functions/lib
+          npm run build
+
+      - name: Deploy via NPM Script
+        run: npm run deploy
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}

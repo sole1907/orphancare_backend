@@ -1,5 +1,5 @@
 import * as functions from "firebase-functions";
-import { getAuth } from "firebase-admin/auth";
+import { getAuth } from "./firebaseAdmin";
 import * as logger from "firebase-functions/logger";
 import Brevo from "sib-api-v3-sdk";
 import "./firebaseAdmin";
