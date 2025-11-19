@@ -3,11 +3,6 @@ name: Deploy Dev Backend
 on:
   push:
     branches: [develop]
-    paths:
-      - "functions/**"
-      - "firestore.rules"
-      - "firestore.indexes.json"
-      - "firebase.json"
 
 jobs:
   deploy:
