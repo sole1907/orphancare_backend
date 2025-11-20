@@ -1,12 +1,13 @@
-import * as functions from "firebase-functions";
+import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { getMessaging } from "./firebaseAdmin";
-import "./firebaseAdmin";
 
-export const sendUpdateNotification = functions
-  .region("europe-west1")
-  .firestore.document("updates/{updateId}")
-  .onCreate(async (snapshot, context) => {
-    const update = snapshot.data();
+export const sendUpdateNotification = onDocumentCreated(
+  {
+    region: "europe-west1",
+    document: "updates/{updateId}",
+  },
+  async (event) => {
+    const update = event.data?.data();
     if (!update) return;
 
     const message = {
@@ -18,4 +19,5 @@ export const sendUpdateNotification = functions
     };
 
     await getMessaging().send(message);
-  });
+  }
+);

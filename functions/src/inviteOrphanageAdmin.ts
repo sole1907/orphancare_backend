@@ -1,12 +1,11 @@
-import * as functions from "firebase-functions";
-import { getAuth } from "./firebaseAdmin";
+import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
+import { getAuth } from "./firebaseAdmin";
 import Brevo from "sib-api-v3-sdk";
-import "./firebaseAdmin";
 
-export const inviteOrphanageAdmin = functions
-  .region("europe-west1")
-  .https.onRequest(async (req, res) => {
+export const inviteOrphanageAdmin = onRequest(
+  { region: "europe-west1" },
+  async (req, res) => {
     logger.info("Incoming headers:\n" + JSON.stringify(req.headers, null, 2));
 
     const allowedOrigins = [
@@ -16,14 +15,14 @@ export const inviteOrphanageAdmin = functions
 
     const origin = req.headers.origin;
     if (origin && allowedOrigins.includes(origin)) {
-      res.set("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Origin", origin);
     }
-    res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.set("Access-Control-Allow-Headers", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "*");
 
     if (req.method === "OPTIONS") {
       logger.info("Preflight request received FROM ", origin);
-      res.status(204).end("");
+      res.status(204).send("");
       return;
     }
 
@@ -92,4 +91,5 @@ export const inviteOrphanageAdmin = functions
       logger.error("Invite error", error);
       res.status(500).send("Internal error");
     }
-  });
+  }
+);
