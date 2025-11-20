@@ -2,9 +2,12 @@ import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { getAuth } from "./firebaseAdmin";
 import Brevo from "sib-api-v3-sdk";
+import { defineSecret } from "firebase-functions/params";
+
+const brevoApiKey = defineSecret("BREVO_API_KEY");
 
 export const inviteOrphanageAdmin = onRequest(
-  { region: "europe-west1" },
+  { region: "europe-west1", secrets: [brevoApiKey] },
   async (req, res) => {
     logger.info("Incoming headers:\n" + JSON.stringify(req.headers, null, 2));
 
@@ -18,7 +21,10 @@ export const inviteOrphanageAdmin = onRequest(
       res.setHeader("Access-Control-Allow-Origin", origin);
     }
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "*");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization, Origin, Accept"
+    );
 
     if (req.method === "OPTIONS") {
       logger.info("Preflight request received FROM ", origin);
@@ -63,9 +69,7 @@ export const inviteOrphanageAdmin = onRequest(
       );
 
       const client = Brevo.ApiClient.instance;
-      client.authentications["api-key"].apiKey = process.env.FIREBASE_CONFIG
-        ? JSON.parse(process.env.FIREBASE_CONFIG).brevo?.apikey
-        : process.env.brevo_apikey;
+      client.authentications["api-key"].apiKey = brevoApiKey.value();
 
       const apiInstance = new Brevo.TransactionalEmailsApi();
 
