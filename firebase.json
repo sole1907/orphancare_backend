@@ -5,11 +5,6 @@
   },
   "functions": {
     "source": ".",
-    "runtime": "nodejs20",
-    "endpoints": {
-      "sendUpdateNotification": {
-        "region": "europe-west1"
-      }
-    }
+    "runtime": "nodejs20"
   }
 }
