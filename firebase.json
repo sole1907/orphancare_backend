@@ -4,7 +4,7 @@
     "indexes": "firestore.indexes.json"
   },
   "functions": {
-    "source": "functions/lib",
+    "source": ".",
     "runtime": "nodejs20"
   }
 }
