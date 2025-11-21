@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc",
     "test": "echo \"No tests yet\" && exit 0",
-    "deploy": "firebase deploy --only functions,firestore:rules,firestore:indexes"
+    "deploy-dev": "firebase deploy --only functions,firestore:rules,firestore:indexes --update-env-vars REGISTRATION_REDIRECT_URL='https://orphancare-93b41.web.app/complete-registration',SENDER_EMAIL='sola.akanmu@gmail.com',SENDER_NAME='Sola'"
   },
   "dependencies": {
     "firebase-admin": "^12.7.0",

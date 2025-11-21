@@ -74,7 +74,10 @@ export const inviteOrphanageAdmin = onRequest(
       const apiInstance = new Brevo.TransactionalEmailsApi();
 
       await apiInstance.sendTransacEmail({
-        sender: { email: "noreply@orphancare.org", name: "Orphancare" },
+        sender: {
+          email: `${process.env.SENDER_EMAIL || "sola.akanmu@gmail.com"}`,
+          name: `${process.env.SENDER_NAME || "Sola"}`,
+        },
         to: [{ email }],
         subject: "Complete your Orphanage Admin registration",
         htmlContent: `
