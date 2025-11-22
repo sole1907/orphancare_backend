@@ -2,6 +2,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Registrations: only allows a signed‑in user to create a document at registrations/{uid} where the doc ID matches their own auth.uid
+    match /registrations/{uid} {
+        allow create: if request.auth != null && request.auth.uid == uid;
+        allow read, update: if request.auth.token.orphanageAdmin == true && request.auth.uid == uid;
+    }
+
     // Orphanages: only superAdmins can read/write, orphanage admins can read
     match /orphanages/{id} {
         allow read, write: if request.auth.token.superAdmin == true;
