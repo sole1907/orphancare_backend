@@ -59,7 +59,7 @@ export const inviteOrphanageAdmin = onRequest(
         url: `${
           process.env.REGISTRATION_REDIRECT_URL ||
           "https://localhost:3000/complete-registration"
-        }?email=${encodeURIComponent(email)}`,
+        }?email=${encodeURIComponent(email)}&orphanageId=${orphanageId}`,
         handleCodeInApp: true,
       };
 
