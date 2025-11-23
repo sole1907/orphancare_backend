@@ -8,12 +8,20 @@ service cloud.firestore {
         allow read, update: if request.auth.token.orphanageAdmin == true && request.auth.uid == uid;
     }
 
-    // Orphanages: only superAdmins can read/write, orphanage admins can read
     match /orphanages/{id} {
+        // SuperAdmins can do everything
         allow read, write: if request.auth.token.superAdmin == true;
+
+        // OrphanageAdmins can read their own orphanage doc
         allow read: if request.auth.token.orphanageAdmin == true &&
-               request.auth.token.orphanageId == id;
+                    request.auth.token.orphanageId == id;
+
+        // OrphanageAdmins can update their own orphanage doc
+        allow update: if request.auth.token.orphanageAdmin == true &&
+                        request.auth.token.orphanageId == id &&
+                        request.auth.uid == resource.data.adminUid;
     }
+
 
     // Children: orphanageAdmins can read/write their own orphanage's children
     match /children/{id} {
