@@ -1,5 +1,5 @@
 // firebaseAdmin.ts
-import { initializeApp, getApps, getApp } from "firebase-admin/app";
+import { initializeApp, getApps } from "firebase-admin/app";
 
 if (!getApps().length) {
   initializeApp();
@@ -7,3 +7,4 @@ if (!getApps().length) {
 
 export { getAuth } from "firebase-admin/auth";
 export { getMessaging } from "firebase-admin/messaging";
+export { getFirestore } from "firebase-admin/firestore";

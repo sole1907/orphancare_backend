@@ -1,10 +1,11 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import { getAuth } from "./firebaseAdmin";
+import { getAuth, getFirestore } from "./firebaseAdmin";
 import Brevo from "sib-api-v3-sdk";
 import { defineSecret } from "firebase-functions/params";
 
 const brevoApiKey = defineSecret("BREVO_API_KEY");
+const db = getFirestore();
 
 export const inviteOrphanageAdmin = onRequest(
   { region: "europe-west1", secrets: [brevoApiKey] },
@@ -53,6 +54,11 @@ export const inviteOrphanageAdmin = onRequest(
       await auth.setCustomUserClaims(user.uid, {
         orphanageAdmin: true,
         orphanageId,
+      });
+
+      // Write the orphanage admin UID into the orphanage doc
+      await db.doc(`orphanages/${orphanageId}`).update({
+        adminUid: user.uid,
       });
 
       const actionCodeSettings = {
