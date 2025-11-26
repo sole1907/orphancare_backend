@@ -1,0 +1,19 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Orphanage logos
+    match /orphanageLogos/{orphanageId}/{allPaths=**} {
+      // Allow orphanage admins to manage their own orphanage logo files
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.token.orphanageAdmin == true
+                   && request.auth.token.orphanageId == orphanageId;
+    }
+
+    // SuperAdmins can do everything
+    match /{allPaths=**} {
+      allow read, write: if request.auth.token.superAdmin == true;
+    }
+  }
+}
