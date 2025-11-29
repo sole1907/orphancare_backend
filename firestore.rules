@@ -24,13 +24,21 @@ service cloud.firestore {
 
 
     // Children: orphanageAdmins can read/write their own orphanage's children
-    match /children/{id} {
-        allow read, write: if (
+    match /children/{childId} {
+        allow read: if request.auth != null && (
             request.auth.token.superAdmin == true ||
-            (request.auth.token.orphanageAdmin == true &&
-            resource.data.orphanageId == request.auth.token.orphanageId)
+            request.auth.token.orphanageAdmin == true
         );
+
+        allow write: if request.auth != null &&
+            request.auth.token.orphanageAdmin == true &&
+            request.resource.data.orphanageId == request.auth.token.orphanageId;
+
+        allow update: if request.auth != null &&
+            request.auth.token.orphanageAdmin == true &&
+            resource.data.orphanageId == request.auth.token.orphanageId;
     }
+
 
     // Donors: donors can read/write their own profile, super admins can read donors profile
     match /donors/{id} {
