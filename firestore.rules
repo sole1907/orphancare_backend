@@ -39,13 +39,16 @@ service cloud.firestore {
             resource.data.orphanageId == request.auth.token.orphanageId;
     }
 
+    match /donors/{donorId} {
+      // Donor can read/write their own record only if verified
+      allow read, write: if request.auth != null
+                         && request.auth.uid == donorId
+                         && request.auth.token.email_verified == true;
 
-    // Donors: donors can read/write their own profile, super admins can read donors profile
-    match /donors/{id} {
-        allow read: if request.auth.uid == id || request.auth.token.superAdmin == true;
-        allow write: if request.auth.uid == id;
+      // Super admin can read all donor records
+      allow read: if request.auth != null
+                  && request.auth.token.superAdmin == true;
     }
-
 
     // Updates: orphanageAdmins can create, donors can read
     match /updates/{id} {
