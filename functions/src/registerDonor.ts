@@ -35,7 +35,16 @@ export const registerDonor = onRequest(
 
     try {
       logger.info("registerDonor triggered");
-      const { email, password, name, phone, country } = req.body;
+      const {
+        email,
+        password,
+        name,
+        phone,
+        country,
+        donorBirthdayMonth,
+        donorBirthdayDay,
+        donorHobbies,
+      } = req.body;
 
       if (!email || !password) {
         res.status(400).send("Missing email or password");
@@ -62,15 +71,25 @@ export const registerDonor = onRequest(
       // Assign donor claim
       await auth.setCustomUserClaims(user.uid, { donor: true });
 
-      // Create donor record in Firestore with inactive status
-      await db.collection("donors").doc(user.uid).set({
+      // Build donor record
+      const donorData: any = {
         name,
         email,
         phone,
         country,
         status: "inactive",
         createdAt: new Date(),
-      });
+      };
+
+      // Add optional fields if provided
+      if (donorBirthdayMonth) donorData.donorBirthdayMonth = donorBirthdayMonth;
+      if (donorBirthdayDay) donorData.donorBirthdayDay = donorBirthdayDay;
+      if (donorHobbies && Array.isArray(donorHobbies)) {
+        donorData.donorHobbies = donorHobbies;
+      }
+
+      // Save donor record in Firestore
+      await db.collection("donors").doc(user.uid).set(donorData);
 
       // Generate custom verification link
       const actionCodeSettings = {
