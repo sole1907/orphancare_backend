@@ -59,6 +59,9 @@ export const registerDonor = onRequest(
         logger.info(`New donor created: ${user.uid}`);
       }
 
+      // Assign donor claim
+      await auth.setCustomUserClaims(user.uid, { donor: true });
+
       // Create donor record in Firestore with inactive status
       await db.collection("donors").doc(user.uid).set({
         name,
