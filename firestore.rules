@@ -70,10 +70,15 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.token.superAdmin == true;
     }
 
-    // Child followers subcollection
-    match /child_followers/{childId}/donors/{donorId} {
-      // Allow donor to follow/unfollow themselves
+    // Donor follows schema
+    match /donor_follows/{donorId} {
+      // Only the authenticated donor can access their own follows
       allow read, write: if request.auth != null && request.auth.uid == donorId;
+
+      // Children subcollection
+      match /children/{childId} {
+        allow read, write: if request.auth != null && request.auth.uid == donorId;
+      }
     }
 
   }
