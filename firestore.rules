@@ -12,9 +12,8 @@ service cloud.firestore {
         // SuperAdmins can do everything
         allow read, write: if request.auth.token.superAdmin == true;
 
-        // OrphanageAdmins can read their own orphanage doc
-        allow read: if request.auth.token.orphanageAdmin == true &&
-                    request.auth.token.orphanageId == id;
+        // Any authenticated user can read orphanage profiles
+        allow read: if request.auth != null;
 
         // OrphanageAdmins can update their own orphanage doc
         allow update: if request.auth.token.orphanageAdmin == true &&
