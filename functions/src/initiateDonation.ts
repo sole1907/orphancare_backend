@@ -66,6 +66,7 @@ export const initiateDonation = onRequest(
               email: donorEmail,
               amount: Math.round(amount * 100), // Paystack expects kobo
               metadata: { donorUid, childId, orphanageId, tipPercent },
+              callback_url: "https://orphancare-93b41.web.app/payment-result", // dummy hosted callback to be intercepted on mobile app
             }),
           }
         );
