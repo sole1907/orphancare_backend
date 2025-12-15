@@ -52,24 +52,24 @@ export const initiateDonation = onRequest(
         return;
       }
 
+      const PAYSTACK_URI =
+        process.env.PAYSTACK_URI || "https://api.paystack.co";
+
       // One-off donation
       if (!recurring) {
-        const response = await fetch(
-          "https://api.paystack.co/transaction/initialize",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${paystackSecret.value()}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              email: donorEmail,
-              amount: Math.round(amount * 100), // Paystack expects kobo
-              metadata: { donorUid, childId, orphanageId, tipPercent },
-              callback_url: "https://orphancare-93b41.web.app/payment-result", // dummy hosted callback to be intercepted on mobile app
-            }),
-          }
-        );
+        const response = await fetch(`${PAYSTACK_URI}/transaction/initialize`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${paystackSecret.value()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email: donorEmail,
+            amount: Math.round(amount * 100), // Paystack expects kobo
+            metadata: { donorUid, childId, orphanageId, tipPercent },
+            callback_url: "https://orphancare-93b41.web.app/payment-result", // dummy hosted callback to be intercepted on mobile app
+          }),
+        });
 
         const data = await response.json();
         if (!data.status) {

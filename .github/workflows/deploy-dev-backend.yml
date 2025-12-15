@@ -23,3 +23,4 @@ jobs:
         run: npm run deploy-dev
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          PAYSTACK_URI: "https://api.paystack.co"
