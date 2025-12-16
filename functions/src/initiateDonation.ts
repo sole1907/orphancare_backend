@@ -127,7 +127,7 @@ export const initiateDonation = onRequest(
           status: "pending",
         });
 
-        res.json({ planId: planData.data.id });
+        res.json({ planId: String(planData.data.id) });
       }
     } catch (error) {
       logger.error("Donation error", error);
