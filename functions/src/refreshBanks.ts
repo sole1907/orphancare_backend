@@ -1,11 +1,11 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import { getFirestore } from "./firebaseAdmin";
+import { db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
 import fetch from "node-fetch";
+import { verifyAuth } from "./lib/authUtils";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
-const db = getFirestore();
 
 export const refreshBanks = onRequest(
   { region: "europe-west1", secrets: [paystackSecret] },
@@ -32,6 +32,18 @@ export const refreshBanks = onRequest(
 
     try {
       logger.info("refreshBanks triggered");
+
+      // 🔐 Auth check
+      try {
+        const decoded = await verifyAuth(req, {
+          requiredRoles: ["superAdmin"],
+        });
+        logger.info(`Invite triggered by ${decoded.uid}`); // ... rest of your logic
+      } catch (err: any) {
+        logger.error("Auth error", err);
+        res.status(err.code || 500).send(err.message || "Internal error");
+        return;
+      }
 
       // Ensure only super admins can call this
       const role = req.headers["x-user-role"]; // you can set this from your portal app

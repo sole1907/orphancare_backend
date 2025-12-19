@@ -1,11 +1,11 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import { getFirestore } from "./firebaseAdmin";
+import { auth, db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
 import fetch from "node-fetch";
+import { verifyAuth } from "./lib/authUtils";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
-const db = getFirestore();
 
 export const initiateDonation = onRequest(
   { region: "europe-west1", secrets: [paystackSecret] },
@@ -45,6 +45,20 @@ export const initiateDonation = onRequest(
         recurring,
         interval,
       } = req.body;
+
+      // 🔐 Auth check
+      try {
+        const decoded = await verifyAuth(req);
+        logger.info(`Invite triggered by ${decoded.uid}`); // ... rest of your logic
+        if (decoded.uid !== donorUid) {
+          res.status(403).send("Forbidden: UID mismatch");
+          return;
+        }
+      } catch (err: any) {
+        logger.error("Auth error", err);
+        res.status(err.code || 500).send(err.message || "Internal error");
+        return;
+      }
 
       if (!donorUid || !donorEmail || !childId || !orphanageId || !amount) {
         res.status(400).send("Missing required fields");

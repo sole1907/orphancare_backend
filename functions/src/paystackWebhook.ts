@@ -1,16 +1,25 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import { getFirestore } from "./firebaseAdmin";
+import { db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
 import * as crypto from "crypto";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
-const db = getFirestore();
 
 export const paystackWebhook = onRequest(
   { region: "europe-west1", secrets: [paystackSecret] },
   async (req: any, res: any) => {
     try {
+      const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim();
+
+      const allowedIps = ["52.31.139.75", "52.49.173.169", "52.214.14.220"];
+
+      if (!ip || !allowedIps.includes(ip)) {
+        logger.error(`Unauthorized IP: ${ip}`);
+        res.status(403).send("Forbidden: Invalid source IP");
+        return;
+      }
+
       const event = req.body;
 
       // ✅ Verify signature

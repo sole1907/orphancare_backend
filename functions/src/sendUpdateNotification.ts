@@ -1,5 +1,5 @@
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
-import { getMessaging } from "./firebaseAdmin";
+import { messaging } from "./lib/firebaseAdmin";
 
 export const sendUpdateNotification = onDocumentCreated(
   {
@@ -18,6 +18,6 @@ export const sendUpdateNotification = onDocumentCreated(
       topic: "donors",
     };
 
-    await getMessaging().send(message);
+    await messaging.send(message);
   }
 );

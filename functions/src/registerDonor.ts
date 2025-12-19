@@ -1,11 +1,10 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import { getAuth, getFirestore } from "./firebaseAdmin";
+import { auth, db } from "./lib/firebaseAdmin";
 import Brevo from "sib-api-v3-sdk";
 import { defineSecret } from "firebase-functions/params";
 
 const brevoApiKey = defineSecret("BREVO_API_KEY");
-const db = getFirestore();
 
 export const registerDonor = onRequest(
   { region: "europe-west1", secrets: [brevoApiKey] },
@@ -51,8 +50,6 @@ export const registerDonor = onRequest(
         logger.error("Missing email or password");
         return;
       }
-
-      const auth = getAuth();
 
       // Create or fetch user
       let user;

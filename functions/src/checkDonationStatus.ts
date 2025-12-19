@@ -1,11 +1,11 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import { getFirestore } from "./firebaseAdmin";
+import { auth, db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
 import fetch from "node-fetch";
+import { verifyAuth } from "./lib/authUtils";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
-const db = getFirestore();
 
 export const checkDonationStatus = onRequest(
   { region: "europe-west1", secrets: [paystackSecret] },
@@ -34,6 +34,16 @@ export const checkDonationStatus = onRequest(
 
     try {
       logger.info("checkDonationStatus triggered");
+      // 🔐 Auth check
+      try {
+        const decoded = await verifyAuth(req);
+        logger.info(`Invite triggered by ${decoded.uid}`); // ... rest of your logic
+      } catch (err: any) {
+        logger.error("Auth error", err);
+        res.status(err.code || 500).send(err.message || "Internal error");
+        return;
+      }
+
       const { reference } = req.body;
 
       if (!reference) {

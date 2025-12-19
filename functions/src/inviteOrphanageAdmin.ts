@@ -1,11 +1,11 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import { getAuth, getFirestore } from "./firebaseAdmin";
+import { auth, db } from "./lib/firebaseAdmin";
 import Brevo from "sib-api-v3-sdk";
 import { defineSecret } from "firebase-functions/params";
+import { verifyAuth } from "./lib/authUtils";
 
 const brevoApiKey = defineSecret("BREVO_API_KEY");
-const db = getFirestore();
 
 export const inviteOrphanageAdmin = onRequest(
   { region: "europe-west1", secrets: [brevoApiKey] },
@@ -35,14 +35,25 @@ export const inviteOrphanageAdmin = onRequest(
 
     try {
       logger.info("inviteOrphanageAdmin triggered");
+
+      // 🔐 Auth check
+      try {
+        const decoded = await verifyAuth(req, {
+          requiredRoles: ["superAdmin"],
+        });
+        logger.info(`Invite triggered by ${decoded.uid}`); // ... rest of your logic
+      } catch (err: any) {
+        logger.error("Auth error", err);
+        res.status(err.code || 500).send(err.message || "Internal error");
+        return;
+      }
+
       const { email, orphanageId } = req.body;
       if (!email || !orphanageId) {
         res.status(400).send("Missing email or orphanageId");
         logger.error("Missing email or orphanageId");
         return;
       }
-
-      const auth = getAuth();
 
       let user;
       try {
