@@ -45,13 +45,6 @@ export const refreshBanks = onRequest(
         return;
       }
 
-      // Ensure only super admins can call this
-      const role = req.headers["x-user-role"]; // you can set this from your portal app
-      if (role !== "superAdmin") {
-        res.status(403).send("Forbidden");
-        return;
-      }
-
       const response = await fetch(
         "https://api.paystack.co/bank?country=nigeria",
         {
