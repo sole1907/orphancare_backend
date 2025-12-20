@@ -80,5 +80,12 @@ service cloud.firestore {
       }
     }
 
+    // Allow all authenticated users to read the bank list
+    match /banks/{bankId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Only Cloud Functions should write
+    }
+
+
   }
 }
