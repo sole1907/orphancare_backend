@@ -33,7 +33,6 @@ export const approveOrphanageAccount = onRequest(
     }
 
     try {
-      // Auth check
       const decoded = await verifyAuth(req, {
         requiredRoles: ["superAdmin"],
       });
@@ -55,7 +54,6 @@ export const approveOrphanageAccount = onRequest(
 
       const data = snap.data() as any;
 
-      // Decrypt the stored account number
       const encrypted = data.accountNumberEncrypted;
       if (!encrypted) {
         res.status(400).json({
@@ -70,36 +68,64 @@ export const approveOrphanageAccount = onRequest(
       const PAYSTACK_URI =
         process.env.PAYSTACK_URI || "https://api.paystack.co";
 
-      // Create Paystack subaccount
-      const response = await fetch(`${PAYSTACK_URI}/subaccount`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${paystackSecret.value()}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          business_name: data.name,
-          settlement_bank: data.bankCode,
-          account_number: fullAccountNumber,
-          percentage_charge: 0, // 0% platform fee
-        }),
-      });
+      let subaccountCode = data.subaccountCode;
 
-      const json = await response.json();
+      // --- CREATE OR UPDATE SUBACCOUNT ---
+      if (!subaccountCode) {
+        // Create new subaccount
+        const response = await fetch(`${PAYSTACK_URI}/subaccount`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${paystackSecret.value()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            business_name: data.name,
+            settlement_bank: data.bankCode,
+            account_number: fullAccountNumber,
+            percentage_charge: 0,
+          }),
+        });
 
-      if (!json.status) {
-        logger.error("Paystack subaccount creation failed", json);
-        res.status(400).json({ error: json.message });
-        return;
+        const json = await response.json();
+        if (!json.status) {
+          logger.error("Paystack subaccount creation failed", json);
+          res.status(400).json({ error: json.message });
+          return;
+        }
+
+        subaccountCode = json.data.subaccount_code;
+      } else {
+        // Update existing subaccount
+        const response = await fetch(
+          `${PAYSTACK_URI}/subaccount/${subaccountCode}`,
+          {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${paystackSecret.value()}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              settlement_bank: data.bankCode,
+              account_number: fullAccountNumber,
+            }),
+          }
+        );
+
+        const json = await response.json();
+        if (!json.status) {
+          logger.error("Paystack subaccount update failed", json);
+          res.status(400).json({ error: json.message });
+          return;
+        }
       }
 
-      const subaccountCode = json.data.subaccount_code;
-
-      // Update Firestore
+      // --- UPDATE FIRESTORE ---
       await ref.update({
         subaccountCode,
         accountVerificationStatus: "approved",
-        accountNumberEncrypted: null, // optional: remove sensitive data
+        accountNumberEncrypted: null, // remove sensitive data
+        updatedAt: new Date(),
       });
 
       res.json({ success: true, subaccountCode });

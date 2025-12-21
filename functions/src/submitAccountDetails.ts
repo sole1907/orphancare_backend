@@ -29,7 +29,6 @@ export const submitAccountDetails = onRequest(
     }
 
     try {
-      // Auth check
       const decoded = await verifyAuth(req, {
         requiredRoles: ["orphanageAdmin"],
       });
@@ -60,7 +59,8 @@ export const submitAccountDetails = onRequest(
         accountNumberEncrypted: encrypted,
         accountNumberMasked: masked,
         accountNumberLast4: last4,
-        accountVerificationStatus: "otp_pending",
+        accountVerificationStatus: "otp_pending", // restart verification
+        updatedAt: new Date(),
       });
 
       res.json({ success: true });
