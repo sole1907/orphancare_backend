@@ -5,7 +5,7 @@ import { defineSecret } from "firebase-functions/params";
 
 const devKeySecret = defineSecret("DEV_ENCRYPTION_KEY");
 
-const isProd = functions.config().env?.type === "production";
+const isProd = process.env.ENV_TYPE === "production";
 
 function getKmsKeyName() {
   const projectId = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT;
