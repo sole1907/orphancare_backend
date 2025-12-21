@@ -10,3 +10,5 @@ export * from "./refreshBanks";
 export * from "./resolveAccount";
 export * from "./sendAccountOtp";
 export * from "./verifyAccountOtp";
+export * from "./approveOrphanageAccount";
+export * from "./submitAccountDetails";
