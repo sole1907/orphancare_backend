@@ -48,6 +48,17 @@ export const notifyAccountStatusChange = onDocumentWritten(
     client.authentications["api-key"].apiKey = brevoApiKey.value();
     const apiInstance = new Brevo.TransactionalEmailsApi();
 
+    // Shared email wrapper
+    const wrapEmail = (title: string, bodyHtml: string) => `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background-color: #f9f9f9; border-radius: 8px;">
+        <h2 style="color: #1e3a8a; margin-bottom: 16px;">${title}</h2>
+        ${bodyHtml}
+        <p style="margin-top: 24px; font-size: 12px; color: #555;">
+          If you have any questions, contact us at support@orphancare.org
+        </p>
+      </div>
+    `;
+
     // --- CASE 1: OTP PENDING ---
     if (newStatus === "otp_pending" && prevStatus !== "otp_pending") {
       logger.info(`Sending OTP for orphanage ${orphanageId}`);
@@ -60,6 +71,20 @@ export const notifyAccountStatusChange = onDocumentWritten(
         accountOtpExpires: expiresAt,
       });
 
+      const htmlContent = wrapEmail(
+        "Verify Your Bank Account",
+        `
+          <p>Hello,</p>
+          <p>We received a request to update your bank account details on <strong>Orphancare</strong>.</p>
+          <p>Please use the OTP below to confirm this change:</p>
+          <p style="font-size: 28px; font-weight: bold; letter-spacing: 4px; margin: 20px 0; color: #1e3a8a;">
+            ${otp}
+          </p>
+          <p>This code will expire in <strong>5 minutes</strong>.</p>
+          <p>If you did not request this change, please contact our support team immediately.</p>
+        `
+      );
+
       await apiInstance.sendTransacEmail({
         sender: {
           email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
@@ -67,12 +92,7 @@ export const notifyAccountStatusChange = onDocumentWritten(
         },
         to: [{ email }],
         subject: "Verify your bank account details",
-        htmlContent: `
-          <p>Hello,</p>
-          <p>Please use the OTP below to verify your bank account details:</p>
-          <h2>${otp}</h2>
-          <p>This code expires in 5 minutes.</p>
-        `,
+        htmlContent,
       });
 
       logger.info(`OTP email sent to ${email}`);
@@ -83,6 +103,16 @@ export const notifyAccountStatusChange = onDocumentWritten(
     if (newStatus === "approved" && prevStatus !== "approved") {
       logger.info(`Sending approval email for orphanage ${orphanageId}`);
 
+      const htmlContent = wrapEmail(
+        "Your Bank Account Has Been Approved",
+        `
+          <p>Hello,</p>
+          <p>Great news! Your bank account details have been successfully approved.</p>
+          <p>You can now receive payouts on <strong>Orphancare</strong>.</p>
+          <p>Thank you for completing your verification.</p>
+        `
+      );
+
       await apiInstance.sendTransacEmail({
         sender: {
           email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
@@ -90,11 +120,7 @@ export const notifyAccountStatusChange = onDocumentWritten(
         },
         to: [{ email }],
         subject: "Your bank account has been approved",
-        htmlContent: `
-          <p>Hello,</p>
-          <p>Your bank account details have been successfully approved.</p>
-          <p>You can now receive payouts on Orphancare.</p>
-        `,
+        htmlContent,
       });
 
       logger.info(`Approval email sent to ${email}`);
@@ -105,6 +131,16 @@ export const notifyAccountStatusChange = onDocumentWritten(
     if (newStatus === "rejected" && prevStatus !== "rejected") {
       logger.info(`Sending rejection email for orphanage ${orphanageId}`);
 
+      const htmlContent = wrapEmail(
+        "Your Bank Account Could Not Be Approved",
+        `
+          <p>Hello,</p>
+          <p>Unfortunately, we were unable to approve your bank account details.</p>
+          <p>Please review your information and try again.</p>
+          <p>If you believe this is an error, feel free to reach out to our support team.</p>
+        `
+      );
+
       await apiInstance.sendTransacEmail({
         sender: {
           email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
@@ -112,11 +148,7 @@ export const notifyAccountStatusChange = onDocumentWritten(
         },
         to: [{ email }],
         subject: "Your bank account could not be approved",
-        htmlContent: `
-          <p>Hello,</p>
-          <p>Unfortunately, your bank account details could not be approved.</p>
-          <p>Please review your information and try again.</p>
-        `,
+        htmlContent,
       });
 
       logger.info(`Rejection email sent to ${email}`);
