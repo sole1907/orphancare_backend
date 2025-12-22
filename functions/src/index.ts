@@ -8,7 +8,7 @@ export * from "./checkDonationStatus";
 export * from "./paystackWebhook";
 export * from "./refreshBanks";
 export * from "./resolveAccount";
-export * from "./sendAccountOtp";
+export * from "./notifyAccountStatusChange";
 export * from "./verifyAccountOtp";
 export * from "./approveOrphanageAccount";
 export * from "./submitAccountDetails";
