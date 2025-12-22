@@ -105,10 +105,8 @@ export const initiateDonation = onRequest(
             email: donorEmail,
             amount: Math.round(amount * 100),
             subaccount: subaccountCode,
-            split: {
-              type: "flat",
-              value: platformAmount, // goes to platform
-            },
+            bearer: "account",
+            transaction_charge: platformAmount,
             metadata: { donorUid, childId, orphanageId, tipPercent },
             callback_url: "https://orphancare-93b41.web.app/payment-result",
           }),
