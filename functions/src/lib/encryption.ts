@@ -1,6 +1,5 @@
 import { KeyManagementServiceClient } from "@google-cloud/kms";
 import CryptoJS from "crypto-js";
-import * as functions from "firebase-functions";
 import { defineSecret } from "firebase-functions/params";
 
 const devKeySecret = defineSecret("DEV_ENCRYPTION_KEY");

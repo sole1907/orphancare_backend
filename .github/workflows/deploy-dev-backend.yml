@@ -24,3 +24,5 @@ jobs:
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
           PAYSTACK_URI: "https://api.paystack.co"
+          ENV_TYPE: "development"
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL_DEV }}

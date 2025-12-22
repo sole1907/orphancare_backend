@@ -29,7 +29,7 @@ export const notifyAccountStatusChange = onDocumentWritten(
       `Status change detected for orphanage ${orphanageId}: ${prevStatus} → ${newStatus}`
     );
 
-    // Get admin email
+    // Get orphanage admin email
     const adminUid = after.adminUid as string | undefined;
     if (!adminUid) {
       logger.error(`No adminUid found on orphanage ${orphanageId}`);
@@ -37,8 +37,8 @@ export const notifyAccountStatusChange = onDocumentWritten(
     }
 
     const userRecord = await auth.getUser(adminUid);
-    const email = userRecord.email;
-    if (!email) {
+    const orphanageEmail = userRecord.email;
+    if (!orphanageEmail) {
       logger.error(`Admin user ${adminUid} has no email`);
       return;
     }
@@ -90,16 +90,52 @@ export const notifyAccountStatusChange = onDocumentWritten(
           email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
           name: process.env.SENDER_NAME || "Sola",
         },
-        to: [{ email }],
+        to: [{ email: orphanageEmail }],
         subject: "Verify your bank account details",
         htmlContent,
       });
 
-      logger.info(`OTP email sent to ${email}`);
+      logger.info(`OTP email sent to ${orphanageEmail}`);
       return;
     }
 
-    // --- CASE 2: APPROVED ---
+    // --- CASE 2: PENDING (notify admin) ---
+    if (newStatus === "pending" && prevStatus !== "pending") {
+      logger.info(
+        `Sending admin notification for pending account ${orphanageId}`
+      );
+
+      const adminEmail = process.env.ADMIN_EMAIL;
+      if (!adminEmail) {
+        logger.error("ADMIN_EMAIL is not set in environment variables.");
+        return;
+      }
+
+      const htmlContent = wrapEmail(
+        "New Bank Account Verification Request",
+        `
+          <p>Hello Admin,</p>
+          <p>A new bank account verification request has been submitted and is awaiting your review.</p>
+          <p><strong>Orphanage:</strong> ${after.name}</p>
+          <p>Please visit the Action Center on the Orphancare dashboard to approve or reject this request.</p>
+        `
+      );
+
+      await apiInstance.sendTransacEmail({
+        sender: {
+          email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
+          name: process.env.SENDER_NAME || "Sola",
+        },
+        to: [{ email: adminEmail }],
+        subject: "New bank account verification request",
+        htmlContent,
+      });
+
+      logger.info(`Admin notification sent to ${adminEmail}`);
+      return;
+    }
+
+    // --- CASE 3: APPROVED ---
     if (newStatus === "approved" && prevStatus !== "approved") {
       logger.info(`Sending approval email for orphanage ${orphanageId}`);
 
@@ -118,16 +154,16 @@ export const notifyAccountStatusChange = onDocumentWritten(
           email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
           name: process.env.SENDER_NAME || "Sola",
         },
-        to: [{ email }],
+        to: [{ email: orphanageEmail }],
         subject: "Your bank account has been approved",
         htmlContent,
       });
 
-      logger.info(`Approval email sent to ${email}`);
+      logger.info(`Approval email sent to ${orphanageEmail}`);
       return;
     }
 
-    // --- CASE 3: REJECTED ---
+    // --- CASE 4: REJECTED ---
     if (newStatus === "rejected" && prevStatus !== "rejected") {
       logger.info(`Sending rejection email for orphanage ${orphanageId}`);
 
@@ -146,12 +182,12 @@ export const notifyAccountStatusChange = onDocumentWritten(
           email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
           name: process.env.SENDER_NAME || "Sola",
         },
-        to: [{ email }],
+        to: [{ email: orphanageEmail }],
         subject: "Your bank account could not be approved",
         htmlContent,
       });
 
-      logger.info(`Rejection email sent to ${email}`);
+      logger.info(`Rejection email sent to ${orphanageEmail}`);
       return;
     }
 
