@@ -4,6 +4,7 @@ import { auth, db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
 import fetch from "node-fetch";
 import { verifyAuth } from "./lib/authUtils";
+import { OrphanageData } from "./types/orphanage";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
@@ -71,6 +72,29 @@ export const initiateDonation = onRequest(
 
       // One-off donation
       if (!recurring) {
+        // 1. Fetch orphanage subaccount
+        const orphanageDoc = await db
+          .collection("orphanages")
+          .doc(orphanageId)
+          .get();
+        if (!orphanageDoc.exists) {
+          res.status(400).send("Invalid orphanage");
+          return;
+        }
+
+        const orphanageData = orphanageDoc.data() as OrphanageData;
+        if (!orphanageData.subaccountCode) {
+          res.status(400).send("Orphanage has no subaccount configured");
+          return;
+        }
+
+        const subaccountCode = orphanageData.subaccountCode;
+
+        // 2. Compute split
+        const orphanageAmount = Math.round(baseAmount * 100); // kobo
+        const platformAmount = Math.round((amount - baseAmount) * 100); // tip in kobo
+
+        // 3. Initialize Paystack transaction with split
         const response = await fetch(`${PAYSTACK_URI}/transaction/initialize`, {
           method: "POST",
           headers: {
@@ -79,9 +103,14 @@ export const initiateDonation = onRequest(
           },
           body: JSON.stringify({
             email: donorEmail,
-            amount: Math.round(amount * 100), // Paystack expects kobo
+            amount: Math.round(amount * 100),
+            subaccount: subaccountCode,
+            split: {
+              type: "flat",
+              value: platformAmount, // goes to platform
+            },
             metadata: { donorUid, childId, orphanageId, tipPercent },
-            callback_url: "https://orphancare-93b41.web.app/payment-result", // dummy hosted callback to be intercepted on mobile app
+            callback_url: "https://orphancare-93b41.web.app/payment-result",
           }),
         });
 
@@ -90,7 +119,7 @@ export const initiateDonation = onRequest(
           throw new Error(data.message || "Paystack init failed");
         }
 
-        // Optionally log donation intent
+        // Log donation intent
         await db.collection("donations").add({
           donorUid,
           childId,
@@ -98,6 +127,8 @@ export const initiateDonation = onRequest(
           amount,
           baseAmount,
           tipPercent,
+          orphanageAmount,
+          platformAmount,
           recurring: false,
           interval: null,
           paystackRef: data.data.reference,
@@ -108,7 +139,7 @@ export const initiateDonation = onRequest(
         res.json({ checkoutUrl: data.data.authorization_url });
       } else {
         // Recurring donation: create plan
-        const planResponse = await fetch("https://api.paystack.co/plan", {
+        const planResponse = await fetch(`${PAYSTACK_URI}/plan`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${paystackSecret.value()}`,
@@ -127,6 +158,9 @@ export const initiateDonation = onRequest(
         }
 
         // Log donation intent
+        const orphanageAmount = Math.round(baseAmount * 100);
+        const platformAmount = Math.round((amount - baseAmount) * 100);
+
         await db.collection("donations").add({
           donorUid,
           childId,
@@ -134,9 +168,11 @@ export const initiateDonation = onRequest(
           amount,
           baseAmount,
           tipPercent,
+          orphanageAmount,
+          platformAmount,
           recurring: true,
           interval,
-          paystackRef: planData.data.id,
+          paystackRef: planData.data.id, // plan ID
           createdAt: new Date(),
           status: "pending",
         });
