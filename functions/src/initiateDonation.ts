@@ -1,3 +1,4 @@
+// functions/src/initiateDonation.ts
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { auth, db } from "./lib/firebaseAdmin";
@@ -5,6 +6,7 @@ import { defineSecret } from "firebase-functions/params";
 import fetch from "node-fetch";
 import { verifyAuth } from "./lib/authUtils";
 import { OrphanageData } from "./types/orphanage";
+import { loadFeeConfig, computeGrossAmount } from "./lib/feeEngine";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
@@ -40,7 +42,7 @@ export const initiateDonation = onRequest(
         donorEmail,
         childId,
         orphanageId,
-        amount,
+        amount, // still the total entered by user (base + tip) on client
         baseAmount,
         tipPercent,
         recurring,
@@ -50,7 +52,7 @@ export const initiateDonation = onRequest(
       // 🔐 Auth check
       try {
         const decoded = await verifyAuth(req);
-        logger.info(`Invite triggered by ${decoded.uid}`); // ... rest of your logic
+        logger.info(`Donation triggered by ${decoded.uid}`);
         if (decoded.uid !== donorUid) {
           res.status(403).send("Forbidden: UID mismatch");
           return;
@@ -61,7 +63,14 @@ export const initiateDonation = onRequest(
         return;
       }
 
-      if (!donorUid || !donorEmail || !childId || !orphanageId || !amount) {
+      if (
+        !donorUid ||
+        !donorEmail ||
+        !childId ||
+        !orphanageId ||
+        !amount ||
+        !baseAmount
+      ) {
         res.status(400).send("Missing required fields");
         logger.error("Missing required fields");
         return;
@@ -69,6 +78,8 @@ export const initiateDonation = onRequest(
 
       const PAYSTACK_URI =
         process.env.PAYSTACK_URI || "https://api.paystack.co";
+
+      const config = await loadFeeConfig();
 
       // One-off donation
       if (!recurring) {
@@ -90,11 +101,21 @@ export const initiateDonation = onRequest(
 
         const subaccountCode = orphanageData.subaccountCode;
 
-        // 2. Compute split
-        const orphanageAmount = Math.round(baseAmount * 100); // kobo
-        const platformAmount = Math.round((amount - baseAmount) * 100); // tip in kobo
+        // 2. Compute amounts (server-side, ignore client’s fee assumptions)
+        const tipAmount = Math.round(baseAmount * tipPercent);
+        const netAmount = baseAmount + tipAmount;
 
-        // 3. Initialize Paystack transaction with split
+        const grossAmount = computeGrossAmount(netAmount, config);
+        const paystackFee = grossAmount - netAmount;
+
+        const orphanageAmount = Math.round(baseAmount * 100); // in kobo
+        const platformAmount = Math.round(tipAmount * 100); // in kobo
+
+        logger.info(
+          `Donation breakdown: base=${baseAmount}, tip=${tipAmount}, net=${netAmount}, fee=${paystackFee}, gross=${grossAmount}`
+        );
+
+        // 3. Initialize Paystack transaction
         const response = await fetch(`${PAYSTACK_URI}/transaction/initialize`, {
           method: "POST",
           headers: {
@@ -103,11 +124,21 @@ export const initiateDonation = onRequest(
           },
           body: JSON.stringify({
             email: donorEmail,
-            amount: Math.round(amount * 100),
+            amount: grossAmount * 100, // donor pays fee
             subaccount: subaccountCode,
-            bearer: "account",
-            transaction_charge: platformAmount,
-            metadata: { donorUid, childId, orphanageId, tipPercent },
+            bearer: "account", // donor covers fee
+            transaction_charge: platformAmount, // platform receives tip
+            metadata: {
+              donorUid,
+              childId,
+              orphanageId,
+              tipPercent,
+              baseAmount,
+              tipAmount,
+              netAmount,
+              paystackFee,
+              grossAmount,
+            },
             callback_url: "https://orphancare-93b41.web.app/payment-result",
           }),
         });
@@ -117,14 +148,17 @@ export const initiateDonation = onRequest(
           throw new Error(data.message || "Paystack init failed");
         }
 
-        // Log donation intent
+        // 4. Log donation intent
         await db.collection("donations").add({
           donorUid,
           childId,
           orphanageId,
-          amount,
+          amount: grossAmount, // what donor will actually be charged
           baseAmount,
           tipPercent,
+          tipAmount,
+          netAmount,
+          paystackFee,
           orphanageAmount,
           platformAmount,
           recurring: false,
@@ -136,8 +170,8 @@ export const initiateDonation = onRequest(
 
         res.json({ checkoutUrl: data.data.authorization_url });
       } else {
-        // Recurring donation: create plan
-        const planResponse = await fetch(`${PAYSTACK_URI}/plan`, {
+        // Recurring donation: create plan (you can later adapt to use fee engine per cycle)
+        const planResponse = await fetch("https://api.paystack.co/plan", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${paystackSecret.value()}`,
@@ -146,7 +180,7 @@ export const initiateDonation = onRequest(
           body: JSON.stringify({
             name: `Donation Plan ${interval}`,
             interval: interval.toLowerCase(), // monthly, quarterly, yearly
-            amount: Math.round(amount * 100),
+            amount: Math.round(amount * 100), // currently charging net; can adjust later
           }),
         });
 
@@ -155,17 +189,21 @@ export const initiateDonation = onRequest(
           throw new Error(planData.message || "Paystack plan failed");
         }
 
-        // Log donation intent
-        const orphanageAmount = Math.round(baseAmount * 100);
-        const platformAmount = Math.round((amount - baseAmount) * 100);
+        const tipAmount = Math.round(baseAmount * tipPercent);
+        const netAmount = baseAmount + tipAmount;
 
+        const orphanageAmount = Math.round(baseAmount * 100);
+        const platformAmount = Math.round(tipAmount * 100);
+
+        // Log donation intent for recurring
         await db.collection("donations").add({
           donorUid,
           childId,
           orphanageId,
-          amount,
+          amount: netAmount, // per charge net (base + tip)
           baseAmount,
           tipPercent,
+          tipAmount,
           orphanageAmount,
           platformAmount,
           recurring: true,
