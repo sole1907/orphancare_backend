@@ -49,7 +49,7 @@ export const submitAccountDetails = onRequest(
       const masked = accountNumber.replace(/\d(?=\d{4})/g, "*");
       const last4 = accountNumber.slice(-4);
 
-      const orphanageId = decoded.claims.orphanageId;
+      const orphanageId = decoded.orphanageId;
       const ref = db.collection("orphanages").doc(orphanageId);
 
       await ref.update({
