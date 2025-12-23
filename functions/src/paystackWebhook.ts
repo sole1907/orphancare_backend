@@ -4,12 +4,13 @@ import { db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
 import * as crypto from "crypto";
 import fetch from "node-fetch";
-import { OrphanageData } from "./types/orphanage";
+import Brevo from "sib-api-v3-sdk";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
+const brevoApiKey = defineSecret("BREVO_API_KEY");
 
 export const paystackWebhook = onRequest(
-  { region: "europe-west1", secrets: [paystackSecret] },
+  { region: "europe-west1", secrets: [paystackSecret, brevoApiKey] },
   async (req: any, res: any) => {
     try {
       const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim();
@@ -56,16 +57,25 @@ export const paystackWebhook = onRequest(
       }
 
       // ---------------------------------------------------------
-      // RECURRING SUCCESS — SMART SPLIT + DONATION ENTRY
+      // RECURRING SUCCESS — SMART SPLIT + DONATION ENTRY + EMAIL ALERT
       // ---------------------------------------------------------
       if (event.event === "invoice.payment_succeeded") {
-        const planCode = event.data.plan.plan_code; // MUST use plan_code
+        const planCode = event.data.plan?.plan_code;
         const chargeId = event.data.id;
         const donorEmail = event.data.customer.email;
-        const grossAmount = event.data.amount / 100; // donor paid
+        const grossAmount = event.data.amount / 100;
         const invoiceNumber = event.data.invoice_number;
 
-        // 1. Find the recurring plan definition
+        if (!planCode) {
+          logger.error(
+            "Missing plan_code in invoice.payment_succeeded:",
+            event.data
+          );
+          res.status(200).send("Missing plan_code");
+          return;
+        }
+
+        // 1. Fetch recurring plan
         const planDoc = await db
           .collection("recurringPlans")
           .doc(planCode)
@@ -77,17 +87,16 @@ export const paystackWebhook = onRequest(
         }
 
         const plan = planDoc.data();
-
         if (!plan) {
-          logger.error("Recurring plan document is empty:", planCode);
+          logger.error("Recurring plan document empty:", planCode);
           res.status(200).send("Invalid plan document");
           return;
         }
 
         const orphanageId = plan.orphanageId;
         const expectedNet = plan.netAmount;
-        const orphanageAmount = plan.orphanageAmount; // kobo
-        const platformAmount = plan.platformAmount; // kobo
+        const orphanageAmount = plan.orphanageAmount;
+        const platformAmount = plan.platformAmount;
 
         // 2. Fetch orphanage subaccount
         const orphanageDoc = await db
@@ -104,59 +113,33 @@ export const paystackWebhook = onRequest(
         const subaccountCode = orphanageData?.subaccountCode;
 
         if (!subaccountCode) {
-          logger.error("Orphanage missing subaccountCode:", orphanageId);
+          logger.error("Missing subaccountCode for orphanage:", orphanageId);
           res.status(200).send("Missing subaccount");
           return;
         }
 
         // 3. Compute actual fee
-        const netReceived = grossAmount; // Paystack already deducted fee
+        const netReceived = grossAmount;
         const actualFee = grossAmount - netReceived;
         const difference = expectedNet - netReceived;
-
-        logger.info(
-          `Recurring charge: gross=${grossAmount}, netReceived=${netReceived}, expectedNet=${expectedNet}, fee=${actualFee}, diff=${difference}`
-        );
+        const diffKobo = Math.round(difference * 100);
 
         // 4. Adjust payouts
         let orphanagePayout = orphanageAmount;
         let platformPayout = platformAmount;
 
-        const diffKobo = Math.round(difference * 100);
-
         if (diffKobo > 0) {
           if (platformPayout >= diffKobo) {
-            // Tip absorbs fee difference
             platformPayout -= diffKobo;
           } else {
-            // Tip not enough → orphanage absorbs remainder
             const remaining = diffKobo - platformPayout;
             platformPayout = 0;
-
-            if (orphanagePayout >= remaining) {
-              orphanagePayout -= remaining;
-            } else {
-              orphanagePayout = 0;
-            }
+            orphanagePayout = Math.max(0, orphanagePayout - remaining);
           }
         }
 
-        // 5. Apply split
-        await fetch(`${PAYSTACK_URI}/transaction/split`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${paystackSecret.value()}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            transaction: chargeId,
-            subaccount: subaccountCode,
-            share: orphanagePayout,
-          }),
-        });
-
-        // 6. Create donation entry (this is REAL money movement)
-        await db.collection("donations").add({
+        // 5. Create donation entry FIRST
+        const donationRef = await db.collection("donations").add({
           donorUid: plan.donorUid,
           donorEmail,
           childId: plan.childId,
@@ -175,15 +158,118 @@ export const paystackWebhook = onRequest(
           createdAt: new Date(),
           paystackRef: invoiceNumber,
           cycle: invoiceNumber,
+          splitStatus: "pending",
+          splitError: null,
+          splitAttemptedAt: null,
         });
 
-        // 7. Mark plan as active (first payment succeeded)
+        // 6. Apply split
+        let splitStatus: "success" | "failed" = "failed";
+        let splitError: string | null = null;
+
+        try {
+          const splitResponse = await fetch(
+            `${PAYSTACK_URI}/transaction/split`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${paystackSecret.value()}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                transaction: chargeId,
+                subaccount: subaccountCode,
+                share: orphanagePayout,
+              }),
+            }
+          );
+
+          const splitData = await splitResponse.json();
+
+          if (splitData.status) {
+            splitStatus = "success";
+          } else {
+            splitError = splitData.message || "Unknown split failure";
+          }
+        } catch (err: any) {
+          splitError = err.message || "Split request error";
+        }
+
+        // 7. Update donation with split status
+        await donationRef.update({
+          splitStatus,
+          splitError,
+          splitAttemptedAt: new Date(),
+        });
+
+        // 8. Notify super admin if split failed
+        if (splitStatus === "failed") {
+          logger.error(
+            `Split failed for donation ${donationRef.id}: ${splitError}`
+          );
+
+          const adminEmail = process.env.ADMIN_EMAIL;
+          if (!adminEmail) {
+            logger.error("ADMIN_EMAIL is not set in environment variables.");
+          } else {
+            // Configure Brevo client
+            const client = Brevo.ApiClient.instance;
+            client.authentications["api-key"].apiKey = brevoApiKey.value();
+            const apiInstance = new Brevo.TransactionalEmailsApi();
+
+            const wrapEmail = (title: string, bodyHtml: string) => `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background-color: #f9f9f9; border-radius: 8px;">
+          <h2 style="color: #1e3a8a; margin-bottom: 16px;">${title}</h2>
+          ${bodyHtml}
+          <p style="margin-top: 24px; font-size: 12px; color: #555;">
+            If you have any questions, contact us at support@orphancare.org
+          </p>
+        </div>
+      `;
+
+            const htmlContent = wrapEmail(
+              "Split Payment Failure",
+              `
+          <p>Hello Admin,</p>
+          <p>A split payment attempt has <strong>failed</strong> during a recurring donation cycle.</p>
+
+          <p><strong>Donation ID:</strong> ${donationRef.id}</p>
+          <p><strong>Plan Code:</strong> ${planCode}</p>
+          <p><strong>Orphanage:</strong> ${orphanageId}</p>
+          <p><strong>Charge ID:</strong> ${chargeId}</p>
+          <p><strong>Orphanage Payout:</strong> ₦${(
+            orphanagePayout / 100
+          ).toFixed(2)}</p>
+
+          <p><strong>Error:</strong> ${splitError}</p>
+
+          <p>Please visit the <strong>Action Center</strong> on the Orphancare dashboard to retry or resolve this split.</p>
+        `
+            );
+
+            await apiInstance.sendTransacEmail({
+              sender: {
+                email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
+                name: process.env.SENDER_NAME || "Sola",
+              },
+              to: [{ email: adminEmail }],
+              subject: "Split Payment Failure",
+              htmlContent,
+            });
+
+            logger.info(`Split failure email sent to admin: ${adminEmail}`);
+          }
+        }
+
+        // 9. Mark plan active if first payment
         if (plan.status !== "active") {
           await planDoc.ref.update({
             status: "active",
             activatedAt: new Date(),
           });
         }
+
+        res.status(200).send("Recurring donation processed");
       }
 
       // ---------------------------------------------------------
