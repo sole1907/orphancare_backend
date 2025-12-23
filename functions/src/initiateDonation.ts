@@ -196,6 +196,8 @@ export const initiateDonation = onRequest(
           throw new Error(planData.message || "Paystack plan failed");
         }
 
+        const planId = planData.data.id;
+
         // 3. Store recurring donation intent
         await db.collection("donations").add({
           donorUid,
@@ -211,11 +213,43 @@ export const initiateDonation = onRequest(
           platformAmount,
           recurring: true,
           interval,
-          paystackRef: planData.data.id, // plan ID
+          paystackRef: planId, // plan ID
           createdAt: new Date(),
           status: "pending",
         });
-        res.json({ planId: String(planData.data.id) });
+
+        // ---------------------------------------------------------
+        // 4. Initialize FIRST PAYMENT (required by Paystack)
+        // ---------------------------------------------------------
+        const initResponse = await fetch(
+          `${PAYSTACK_URI}/transaction/initialize`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${paystackSecret.value()}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              email: donorEmail,
+              amount: grossAmount * 100,
+              plan: planId, // THIS LINKS THE FIRST PAYMENT TO THE PLAN
+              metadata: { donorUid, childId, orphanageId, tipPercent },
+              callback_url: "https://orphancare-93b41.web.app/payment-result",
+            }),
+          }
+        );
+        const initData = await initResponse.json();
+        if (!initData.status) {
+          throw new Error(
+            initData.message || "Failed to initialize first payment"
+          );
+        }
+
+        // 5. Return checkout URL to Flutter
+        res.json({
+          checkoutUrl: initData.data.authorization_url,
+          planId: String(planId),
+        });
       }
     } catch (error) {
       logger.error("Donation error", error);
