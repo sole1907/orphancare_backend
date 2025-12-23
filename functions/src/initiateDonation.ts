@@ -118,7 +118,7 @@ export const initiateDonation = onRequest(
             email: donorEmail,
             amount: grossAmount * 100, // donor pays fee
             subaccount: subaccountCode,
-            bearer: "account", // donor covers fee
+            bearer: "subaccount",
             transaction_charge: platformAmount, // platform receives tip
             metadata: {
               donorUid,
