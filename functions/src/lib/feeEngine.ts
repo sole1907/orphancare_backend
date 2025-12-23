@@ -5,9 +5,10 @@ export interface FeeConfig {
   percentage: number; // e.g. 0.015
   flatFee: number; // e.g. 100
   cap: number; // e.g. 2000
+  vatPercentage: number; // e.g. 0.075
+  flatFeeWaiverThreshold: number; // e.g. 2500
 }
 
-// Optional: allow overriding doc ID via env
 const FEE_CONFIG_DOC_ID = process.env.FEE_CONFIG_DOC_ID || "fees";
 
 let cachedConfig: FeeConfig | null = null;
@@ -28,39 +29,60 @@ export async function loadFeeConfig(): Promise<FeeConfig> {
     percentage: data.percentage,
     flatFee: data.flatFee,
     cap: data.cap,
+    vatPercentage: data.vatPercentage,
+    flatFeeWaiverThreshold: data.flatFeeWaiverThreshold,
   };
 
   return cachedConfig;
 }
 
-export function computePaystackFee(
-  netAmount: number,
-  config: FeeConfig
-): number {
-  let fee = Math.ceil(netAmount * config.percentage + config.flatFee);
-  if (fee > config.cap) fee = config.cap;
-  return fee;
+/**
+ * Compute Paystack fee using:
+ * - 1.5% of amount
+ * - + ₦100 flat fee (waived under ₦2500)
+ * - + VAT on fee
+ * - capped at ₦2000
+ */
+export function computePaystackFee(amount: number, config: FeeConfig): number {
+  // 1. Percentage fee
+  let fee = amount * config.percentage;
+
+  // 2. Flat fee (waived under threshold)
+  if (amount >= config.flatFeeWaiverThreshold) {
+    fee += config.flatFee;
+  }
+
+  // 3. VAT
+  fee = fee * (1 + config.vatPercentage);
+
+  // 4. Cap
+  if (fee > config.cap) {
+    fee = config.cap;
+  }
+
+  return Math.ceil(fee);
 }
 
 /**
  * Compute gross amount such that:
- * donor pays (netAmount + fee), not netAmount,
+ * donor pays (netAmount + fee),
  * and fee follows Paystack rules.
  */
 export function computeGrossAmount(
   netAmount: number,
   config: FeeConfig
 ): number {
-  // First approximation: solve gross = (net + flat) / (1 - percentage)
-  let gross = Math.ceil((netAmount + config.flatFee) / (1 - config.percentage));
+  // Start with an estimate
+  let gross = netAmount;
 
-  // Recompute fee on that gross to ensure cap is respected
-  const feeOnGross = computePaystackFee(gross, config);
+  while (true) {
+    const fee = computePaystackFee(gross, config);
+    const expectedGross = netAmount + fee;
 
-  if (feeOnGross > config.cap) {
-    // When capped, donor just pays net + cap
-    return netAmount + config.cap;
+    if (expectedGross === gross) {
+      return gross;
+    }
+
+    gross = expectedGross;
   }
-
-  return gross;
 }
