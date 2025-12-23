@@ -56,66 +56,61 @@ export const paystackWebhook = onRequest(
       }
 
       // ---------------------------------------------------------
-      // RECURRING SUCCESS — SMART SPLIT
+      // RECURRING SUCCESS — SMART SPLIT + DONATION ENTRY
       // ---------------------------------------------------------
       if (event.event === "invoice.payment_succeeded") {
-        const planId = event.data.plan.id;
+        const planCode = event.data.plan.plan_code; // MUST use plan_code
         const chargeId = event.data.id;
         const donorEmail = event.data.customer.email;
         const grossAmount = event.data.amount / 100; // donor paid
         const invoiceNumber = event.data.invoice_number;
 
-        // 1. Find original donation record
-        const donationSnap = await db
-          .collection("donations")
-          .where("paystackRef", "==", planId)
-          .where("recurring", "==", true)
-          .limit(1)
+        // 1. Find the recurring plan definition
+        const planDoc = await db
+          .collection("recurringPlans")
+          .doc(planCode)
           .get();
-
-        if (donationSnap.empty) {
-          logger.error("No matching recurring donation found:", planId);
-          res.status(200).send("No matching donation");
+        if (!planDoc.exists) {
+          logger.error("No matching recurring plan found:", planCode);
+          res.status(200).send("No matching plan");
           return;
         }
 
-        const donationDoc = donationSnap.docs[0];
-        const donation = donationDoc.data();
+        const plan = planDoc.data();
 
-        const orphanageId = donation.orphanageId;
-        const expectedNet = donation.netAmount;
-        const orphanageAmount = donation.orphanageAmount; // kobo
-        const platformAmount = donation.platformAmount; // kobo
+        if (!plan) {
+          logger.error("Recurring plan document is empty:", planCode);
+          res.status(200).send("Invalid plan document");
+          return;
+        }
+
+        const orphanageId = plan.orphanageId;
+        const expectedNet = plan.netAmount;
+        const orphanageAmount = plan.orphanageAmount; // kobo
+        const platformAmount = plan.platformAmount; // kobo
 
         // 2. Fetch orphanage subaccount
         const orphanageDoc = await db
           .collection("orphanages")
           .doc(orphanageId)
           .get();
-
-        const orphanageData = orphanageDoc.data() as OrphanageData | undefined;
-
-        if (!orphanageData) {
+        if (!orphanageDoc.exists) {
           logger.error("Orphanage not found:", orphanageId);
           res.status(200).send("Orphanage missing");
           return;
         }
 
-        if (!orphanageData.subaccountCode) {
+        const orphanageData = orphanageDoc.data();
+        const subaccountCode = orphanageData?.subaccountCode;
+
+        if (!subaccountCode) {
           logger.error("Orphanage missing subaccountCode:", orphanageId);
           res.status(200).send("Missing subaccount");
           return;
         }
 
-        const subaccountCode = orphanageData.subaccountCode;
-        if (!subaccountCode) {
-          logger.error("Missing subaccountCode:", orphanageId);
-          res.status(200).send("Missing subaccount");
-          return;
-        }
-
         // 3. Compute actual fee
-        const netReceived = event.data.paid_at ? grossAmount : 0;
+        const netReceived = grossAmount; // Paystack already deducted fee
         const actualFee = grossAmount - netReceived;
         const difference = expectedNet - netReceived;
 
@@ -134,7 +129,7 @@ export const paystackWebhook = onRequest(
             // Tip absorbs fee difference
             platformPayout -= diffKobo;
           } else {
-            // Tip not enough → orphanage gets as close as possible
+            // Tip not enough → orphanage absorbs remainder
             const remaining = diffKobo - platformPayout;
             platformPayout = 0;
 
@@ -160,13 +155,13 @@ export const paystackWebhook = onRequest(
           }),
         });
 
-        // 6. Log cycle
+        // 6. Create donation entry (this is REAL money movement)
         await db.collection("donations").add({
-          donorUid: donation.donorUid,
+          donorUid: plan.donorUid,
           donorEmail,
-          childId: donation.childId,
+          childId: plan.childId,
           orphanageId,
-          planId,
+          planCode,
           grossAmount,
           netReceived,
           actualFee,
@@ -176,36 +171,91 @@ export const paystackWebhook = onRequest(
           platformPayout,
           status: "success",
           recurring: true,
-          interval: donation.interval,
+          interval: plan.interval,
           createdAt: new Date(),
           paystackRef: invoiceNumber,
           cycle: invoiceNumber,
         });
+
+        // 7. Mark plan as active (first payment succeeded)
+        if (plan.status !== "active") {
+          await planDoc.ref.update({
+            status: "active",
+            activatedAt: new Date(),
+          });
+        }
       }
 
       // ---------------------------------------------------------
       // RECURRING FAILURE
       // ---------------------------------------------------------
       if (event.event === "invoice.payment_failed") {
-        const planId = event.data.plan.id;
+        const planCode = event.data.plan?.plan_code;
+
+        if (!planCode) {
+          logger.error(
+            "Missing plan_code in payment_failed event:",
+            event.data
+          );
+          res.status(200).send("Missing plan_code");
+          return;
+        }
+
+        const planDoc = await db
+          .collection("recurringPlans")
+          .doc(planCode)
+          .get();
+
+        if (!planDoc.exists) {
+          logger.error(
+            "No matching recurring plan found for failure:",
+            planCode
+          );
+          res.status(200).send("No matching plan");
+          return;
+        }
+
+        const plan = planDoc.data();
+        if (!plan) {
+          logger.error("Recurring plan document is empty:", planCode);
+          res.status(200).send("Invalid plan document");
+          return;
+        }
+
         const donorEmail = event.data.customer.email;
         const amount = event.data.amount / 100;
         const invoiceNumber = event.data.invoice_number;
 
+        // CASE 1: FIRST PAYMENT FAILED
+        if (plan.status === "pending") {
+          await planDoc.ref.update({
+            status: "failed",
+            failedAt: new Date(),
+          });
+
+          logger.info(`Recurring plan ${planCode} first payment FAILED`);
+          res.status(200).send("First recurring payment failed");
+          return;
+        }
+
+        // CASE 2: SUBSEQUENT PAYMENT FAILED
         await db.collection("donations").add({
-          donorUid: event.data.metadata?.donorUid || null,
+          donorUid: plan.donorUid,
           donorEmail,
-          childId: event.data.metadata?.childId || null,
-          orphanageId: event.data.metadata?.orphanageId || null,
-          planId,
+          childId: plan.childId,
+          orphanageId: plan.orphanageId,
+          planCode,
           amount,
           status: "failed",
           recurring: true,
-          interval: event.data.plan.interval,
+          interval: plan.interval,
           createdAt: new Date(),
           paystackRef: invoiceNumber,
           cycle: invoiceNumber,
         });
+
+        logger.info(`Recurring cycle FAILED for plan ${planCode}`);
+        res.status(200).send("Recurring cycle failed");
       }
 
       // ---------------------------------------------------------

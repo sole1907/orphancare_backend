@@ -162,22 +162,27 @@ export const initiateDonation = onRequest(
 
         res.json({ checkoutUrl: data.data.authorization_url });
         //---------------------------------------------------------
-        //RECURRING DONATION (PLAN CREATION)
+        // RECURRING DONATION (PLAN CREATION + FIRST PAYMENT)
         //---------------------------------------------------------
       } else {
         // 1. Compute amounts
         const tipAmount = Math.round(baseAmount * tipPercent);
         const netAmount = baseAmount + tipAmount;
+
         // Donor pays fee → gross-up
         const grossAmount = computeGrossAmount(netAmount, config);
         const paystackFeeEstimate = grossAmount - netAmount;
-        const orphanageAmount = Math.round(baseAmount * 100);
-        const platformAmount = Math.round(tipAmount * 100);
+
+        const orphanageAmount = Math.round(baseAmount * 100); // kobo
+        const platformAmount = Math.round(tipAmount * 100); // kobo
+
         logger.info(
           `Recurring donation breakdown: base=${baseAmount}, tip=${tipAmount}, net=${netAmount}, gross=${grossAmount}, feeEstimate=${paystackFeeEstimate}`
         );
 
+        //---------------------------------------------------------
         // 2. Create Paystack plan using grossAmount
+        //---------------------------------------------------------
         const planResponse = await fetch(`${PAYSTACK_URI}/plan`, {
           method: "POST",
           headers: {
@@ -187,19 +192,23 @@ export const initiateDonation = onRequest(
           body: JSON.stringify({
             name: `Donation Plan ${interval}`,
             interval: interval.toLowerCase(),
-            amount: grossAmount * 100,
-            // donor pays fee buffer
+            amount: grossAmount * 100, // donor pays fee buffer
           }),
         });
+
         const planData = await planResponse.json();
         if (!planData.status) {
           throw new Error(planData.message || "Paystack plan failed");
         }
 
-        const planId = planData.data.id;
+        const planId = planData.data.id; // numeric (not used)
+        const planCode = planData.data.plan_code; // REAL recurring identifier
 
-        // 3. Store recurring donation intent
-        await db.collection("donations").add({
+        //---------------------------------------------------------
+        // 3. Store recurring donation INTENT (subscription definition)
+        //    This is NOT a donation. It is the plan metadata.
+        //---------------------------------------------------------
+        await db.collection("recurringPlans").doc(planCode).set({
           donorUid,
           childId,
           orphanageId,
@@ -211,16 +220,16 @@ export const initiateDonation = onRequest(
           paystackFeeEstimate,
           orphanageAmount,
           platformAmount,
-          recurring: true,
           interval,
-          paystackRef: planId, // plan ID
+          planCode,
+          planId,
           createdAt: new Date(),
-          status: "pending",
+          status: "pending", // becomes "active" after first payment succeeds
         });
 
-        // ---------------------------------------------------------
+        //---------------------------------------------------------
         // 4. Initialize FIRST PAYMENT (required by Paystack)
-        // ---------------------------------------------------------
+        //---------------------------------------------------------
         const initResponse = await fetch(
           `${PAYSTACK_URI}/transaction/initialize`,
           {
@@ -232,12 +241,19 @@ export const initiateDonation = onRequest(
             body: JSON.stringify({
               email: donorEmail,
               amount: grossAmount * 100,
-              plan: planId, // THIS LINKS THE FIRST PAYMENT TO THE PLAN
-              metadata: { donorUid, childId, orphanageId, tipPercent },
+              plan: planCode, // MUST be plan_code
+              metadata: {
+                donorUid,
+                childId,
+                orphanageId,
+                tipPercent,
+                planCode,
+              },
               callback_url: "https://orphancare-93b41.web.app/payment-result",
             }),
           }
         );
+
         const initData = await initResponse.json();
         if (!initData.status) {
           throw new Error(
@@ -245,10 +261,12 @@ export const initiateDonation = onRequest(
           );
         }
 
-        // 5. Return checkout URL to Flutter
+        //---------------------------------------------------------
+        // 5. Return checkout URL + planCode to Flutter
+        //---------------------------------------------------------
         res.json({
           checkoutUrl: initData.data.authorization_url,
-          planId: String(planId),
+          planCode: String(planCode),
         });
       }
     } catch (error) {
