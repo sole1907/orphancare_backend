@@ -42,7 +42,6 @@ export const initiateDonation = onRequest(
         donorEmail,
         childId,
         orphanageId,
-        amount, // still the total entered by user (base + tip) on client
         baseAmount,
         tipPercent,
         recurring,
@@ -63,14 +62,7 @@ export const initiateDonation = onRequest(
         return;
       }
 
-      if (
-        !donorUid ||
-        !donorEmail ||
-        !childId ||
-        !orphanageId ||
-        !amount ||
-        !baseAmount
-      ) {
+      if (!donorUid || !donorEmail || !childId || !orphanageId || !baseAmount) {
         res.status(400).send("Missing required fields");
         logger.error("Missing required fields");
         return;
@@ -169,9 +161,24 @@ export const initiateDonation = onRequest(
         });
 
         res.json({ checkoutUrl: data.data.authorization_url });
+        //---------------------------------------------------------
+        //RECURRING DONATION (PLAN CREATION)
+        //---------------------------------------------------------
       } else {
-        // Recurring donation: create plan (you can later adapt to use fee engine per cycle)
-        const planResponse = await fetch("https://api.paystack.co/plan", {
+        // 1. Compute amounts
+        const tipAmount = Math.round(baseAmount * tipPercent);
+        const netAmount = baseAmount + tipAmount;
+        // Donor pays fee → gross-up
+        const grossAmount = computeGrossAmount(netAmount, config);
+        const paystackFeeEstimate = grossAmount - netAmount;
+        const orphanageAmount = Math.round(baseAmount * 100);
+        const platformAmount = Math.round(tipAmount * 100);
+        logger.info(
+          `Recurring donation breakdown: base=${baseAmount}, tip=${tipAmount}, net=${netAmount}, gross=${grossAmount}, feeEstimate=${paystackFeeEstimate}`
+        );
+
+        // 2. Create Paystack plan using grossAmount
+        const planResponse = await fetch(`${PAYSTACK_URI}/plan`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${paystackSecret.value()}`,
@@ -179,31 +186,27 @@ export const initiateDonation = onRequest(
           },
           body: JSON.stringify({
             name: `Donation Plan ${interval}`,
-            interval: interval.toLowerCase(), // monthly, quarterly, yearly
-            amount: Math.round(amount * 100), // currently charging net; can adjust later
+            interval: interval.toLowerCase(),
+            amount: grossAmount * 100,
+            // donor pays fee buffer
           }),
         });
-
         const planData = await planResponse.json();
         if (!planData.status) {
           throw new Error(planData.message || "Paystack plan failed");
         }
 
-        const tipAmount = Math.round(baseAmount * tipPercent);
-        const netAmount = baseAmount + tipAmount;
-
-        const orphanageAmount = Math.round(baseAmount * 100);
-        const platformAmount = Math.round(tipAmount * 100);
-
-        // Log donation intent for recurring
+        // 3. Store recurring donation intent
         await db.collection("donations").add({
           donorUid,
           childId,
           orphanageId,
-          amount: netAmount, // per charge net (base + tip)
           baseAmount,
           tipPercent,
           tipAmount,
+          netAmount,
+          grossAmount,
+          paystackFeeEstimate,
           orphanageAmount,
           platformAmount,
           recurring: true,
@@ -212,7 +215,6 @@ export const initiateDonation = onRequest(
           createdAt: new Date(),
           status: "pending",
         });
-
         res.json({ planId: String(planData.data.id) });
       }
     } catch (error) {

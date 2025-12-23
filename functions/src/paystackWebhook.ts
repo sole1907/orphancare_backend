@@ -4,6 +4,7 @@ import { db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
 import * as crypto from "crypto";
 import fetch from "node-fetch";
+import { OrphanageData } from "./types/orphanage";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
@@ -49,22 +50,22 @@ export const paystackWebhook = onRequest(
           .where("paystackRef", "==", ref)
           .get();
 
-        snapshot.forEach((doc: FirebaseFirestore.QueryDocumentSnapshot) => {
+        snapshot.forEach((doc) => {
           doc.ref.update({ status: "success", updatedAt: new Date() });
         });
       }
 
       // ---------------------------------------------------------
-      // RECURRING SUCCESS — APPLY SPLIT HERE
+      // RECURRING SUCCESS — SMART SPLIT
       // ---------------------------------------------------------
       if (event.event === "invoice.payment_succeeded") {
         const planId = event.data.plan.id;
-        const chargeId = event.data.id; // Paystack charge ID
+        const chargeId = event.data.id;
         const donorEmail = event.data.customer.email;
-        const amount = event.data.amount / 100;
+        const grossAmount = event.data.amount / 100; // donor paid
         const invoiceNumber = event.data.invoice_number;
 
-        // 1. Find the original donation record
+        // 1. Find original donation record
         const donationSnap = await db
           .collection("donations")
           .where("paystackRef", "==", planId)
@@ -73,10 +74,7 @@ export const paystackWebhook = onRequest(
           .get();
 
         if (donationSnap.empty) {
-          logger.error(
-            "No matching recurring donation found for plan:",
-            planId
-          );
+          logger.error("No matching recurring donation found:", planId);
           res.status(200).send("No matching donation");
           return;
         }
@@ -85,6 +83,7 @@ export const paystackWebhook = onRequest(
         const donation = donationDoc.data();
 
         const orphanageId = donation.orphanageId;
+        const expectedNet = donation.netAmount;
         const orphanageAmount = donation.orphanageAmount; // kobo
         const platformAmount = donation.platformAmount; // kobo
 
@@ -93,24 +92,61 @@ export const paystackWebhook = onRequest(
           .collection("orphanages")
           .doc(orphanageId)
           .get();
-        if (!orphanageDoc.exists) {
+
+        const orphanageData = orphanageDoc.data() as OrphanageData | undefined;
+
+        if (!orphanageData) {
           logger.error("Orphanage not found:", orphanageId);
           res.status(200).send("Orphanage missing");
           return;
         }
 
-        const orphanageData = orphanageDoc.data() as any;
-        const subaccountCode = orphanageData.subaccountCode;
-
-        if (!subaccountCode) {
+        if (!orphanageData.subaccountCode) {
           logger.error("Orphanage missing subaccountCode:", orphanageId);
           res.status(200).send("Missing subaccount");
           return;
         }
 
-        // 3. Apply split to this recurring charge
-        logger.info("Applying split to recurring charge:", chargeId);
+        const subaccountCode = orphanageData.subaccountCode;
+        if (!subaccountCode) {
+          logger.error("Missing subaccountCode:", orphanageId);
+          res.status(200).send("Missing subaccount");
+          return;
+        }
 
+        // 3. Compute actual fee
+        const netReceived = event.data.paid_at ? grossAmount : 0;
+        const actualFee = grossAmount - netReceived;
+        const difference = expectedNet - netReceived;
+
+        logger.info(
+          `Recurring charge: gross=${grossAmount}, netReceived=${netReceived}, expectedNet=${expectedNet}, fee=${actualFee}, diff=${difference}`
+        );
+
+        // 4. Adjust payouts
+        let orphanagePayout = orphanageAmount;
+        let platformPayout = platformAmount;
+
+        const diffKobo = Math.round(difference * 100);
+
+        if (diffKobo > 0) {
+          if (platformPayout >= diffKobo) {
+            // Tip absorbs fee difference
+            platformPayout -= diffKobo;
+          } else {
+            // Tip not enough → orphanage gets as close as possible
+            const remaining = diffKobo - platformPayout;
+            platformPayout = 0;
+
+            if (orphanagePayout >= remaining) {
+              orphanagePayout -= remaining;
+            } else {
+              orphanagePayout = 0;
+            }
+          }
+        }
+
+        // 5. Apply split
         await fetch(`${PAYSTACK_URI}/transaction/split`, {
           method: "POST",
           headers: {
@@ -120,26 +156,30 @@ export const paystackWebhook = onRequest(
           body: JSON.stringify({
             transaction: chargeId,
             subaccount: subaccountCode,
-            share: orphanageAmount, // orphanage share in kobo
+            share: orphanagePayout,
           }),
         });
 
-        // 4. Log this cycle
+        // 6. Log cycle
         await db.collection("donations").add({
           donorUid: donation.donorUid,
           donorEmail,
           childId: donation.childId,
           orphanageId,
           planId,
-          amount,
+          grossAmount,
+          netReceived,
+          actualFee,
+          expectedNet,
+          differenceAbsorbed: difference,
+          orphanagePayout,
+          platformPayout,
           status: "success",
           recurring: true,
           interval: donation.interval,
           createdAt: new Date(),
           paystackRef: invoiceNumber,
           cycle: invoiceNumber,
-          orphanageAmount,
-          platformAmount,
         });
       }
 
@@ -178,7 +218,7 @@ export const paystackWebhook = onRequest(
           .where("paystackRef", "==", ref)
           .get();
 
-        snapshot.forEach((doc: FirebaseFirestore.QueryDocumentSnapshot) => {
+        snapshot.forEach((doc) => {
           doc.ref.update({ status: "failed", updatedAt: new Date() });
         });
       }
