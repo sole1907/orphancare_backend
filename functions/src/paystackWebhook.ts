@@ -13,7 +13,14 @@ export const paystackWebhook = onRequest(
   { region: "europe-west1", secrets: [paystackSecret, brevoApiKey] },
   async (req, res): Promise<void> => {
     try {
-      const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim();
+      const forwardedFor = req.headers["x-forwarded-for"];
+
+      const ip =
+        typeof forwardedFor === "string"
+          ? forwardedFor.split(",")[0].trim()
+          : Array.isArray(forwardedFor)
+          ? forwardedFor[0].trim()
+          : undefined;
       const allowedIps = ["52.31.139.75", "52.49.173.169", "52.214.14.220"];
 
       if (!ip || !allowedIps.includes(ip)) {
