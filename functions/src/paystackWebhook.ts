@@ -11,7 +11,7 @@ const brevoApiKey = defineSecret("BREVO_API_KEY");
 
 export const paystackWebhook = onRequest(
   { region: "europe-west1", secrets: [paystackSecret, brevoApiKey] },
-  async (req: any, res: any) => {
+  async (req, res): Promise<void> => {
     try {
       const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim();
       const allowedIps = ["52.31.139.75", "52.49.173.169", "52.214.14.220"];
@@ -42,39 +42,15 @@ export const paystackWebhook = onRequest(
       logger.info(`Webhook event body: ${JSON.stringify(event, null, 2)}`);
 
       // ---------------------------------------------------------
-      // ONE-OFF SUCCESS
+      // SHARED HANDLER FOR RECURRING SUCCESS (FIRST + SUBSEQUENT)
       // ---------------------------------------------------------
-      if (event.event === "charge.success") {
-        const ref = event.data.reference;
-        const snapshot = await db
-          .collection("donations")
-          .where("paystackRef", "==", ref)
-          .get();
-
-        snapshot.forEach((doc) => {
-          doc.ref.update({ status: "success", updatedAt: new Date() });
-        });
-      }
-
-      // ---------------------------------------------------------
-      // RECURRING SUCCESS — SMART SPLIT + DONATION ENTRY + EMAIL ALERT
-      // ---------------------------------------------------------
-      if (event.event === "invoice.payment_succeeded") {
-        const planCode = event.data.plan?.plan_code;
-        const chargeId = event.data.id;
-        const donorEmail = event.data.customer.email;
-        const grossAmount = event.data.amount / 100;
-        const invoiceNumber = event.data.invoice_number;
-
-        if (!planCode) {
-          logger.error(
-            "Missing plan_code in invoice.payment_succeeded:",
-            event.data
-          );
-          res.status(200).send("Missing plan_code");
-          return;
-        }
-
+      const handleRecurringSuccess = async (
+        planCode: string,
+        chargeId: number,
+        donorEmail: string,
+        grossAmount: number,
+        cycleRef: string
+      ) => {
         // 1. Fetch recurring plan
         const planDoc = await db
           .collection("recurringPlans")
@@ -82,14 +58,12 @@ export const paystackWebhook = onRequest(
           .get();
         if (!planDoc.exists) {
           logger.error("No matching recurring plan found:", planCode);
-          res.status(200).send("No matching plan");
           return;
         }
 
         const plan = planDoc.data();
         if (!plan) {
           logger.error("Recurring plan document empty:", planCode);
-          res.status(200).send("Invalid plan document");
           return;
         }
 
@@ -105,7 +79,6 @@ export const paystackWebhook = onRequest(
           .get();
         if (!orphanageDoc.exists) {
           logger.error("Orphanage not found:", orphanageId);
-          res.status(200).send("Orphanage missing");
           return;
         }
 
@@ -114,7 +87,6 @@ export const paystackWebhook = onRequest(
 
         if (!subaccountCode) {
           logger.error("Missing subaccountCode for orphanage:", orphanageId);
-          res.status(200).send("Missing subaccount");
           return;
         }
 
@@ -156,8 +128,8 @@ export const paystackWebhook = onRequest(
           recurring: true,
           interval: plan.interval,
           createdAt: new Date(),
-          paystackRef: invoiceNumber,
-          cycle: invoiceNumber,
+          paystackRef: cycleRef,
+          cycle: cycleRef,
           splitStatus: "pending",
           splitError: null,
           splitAttemptedAt: null,
@@ -209,42 +181,39 @@ export const paystackWebhook = onRequest(
           );
 
           const adminEmail = process.env.ADMIN_EMAIL;
-          if (!adminEmail) {
-            logger.error("ADMIN_EMAIL is not set in environment variables.");
-          } else {
-            // Configure Brevo client
+          if (adminEmail) {
             const client = Brevo.ApiClient.instance;
             client.authentications["api-key"].apiKey = brevoApiKey.value();
             const apiInstance = new Brevo.TransactionalEmailsApi();
 
             const wrapEmail = (title: string, bodyHtml: string) => `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background-color: #f9f9f9; border-radius: 8px;">
-          <h2 style="color: #1e3a8a; margin-bottom: 16px;">${title}</h2>
-          ${bodyHtml}
-          <p style="margin-top: 24px; font-size: 12px; color: #555;">
-            If you have any questions, contact us at support@orphancare.org
-          </p>
-        </div>
-      `;
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background-color: #f9f9f9; border-radius: 8px;">
+                <h2 style="color: #1e3a8a; margin-bottom: 16px;">${title}</h2>
+                ${bodyHtml}
+                <p style="margin-top: 24px; font-size: 12px; color: #555;">
+                  If you have any questions, contact us at support@orphancare.org
+                </p>
+              </div>
+            `;
 
             const htmlContent = wrapEmail(
               "Split Payment Failure",
               `
-          <p>Hello Admin,</p>
-          <p>A split payment attempt has <strong>failed</strong> during a recurring donation cycle.</p>
+                <p>Hello Admin,</p>
+                <p>A split payment attempt has <strong>failed</strong> during a recurring donation cycle.</p>
 
-          <p><strong>Donation ID:</strong> ${donationRef.id}</p>
-          <p><strong>Plan Code:</strong> ${planCode}</p>
-          <p><strong>Orphanage:</strong> ${orphanageId}</p>
-          <p><strong>Charge ID:</strong> ${chargeId}</p>
-          <p><strong>Orphanage Payout:</strong> ₦${(
-            orphanagePayout / 100
-          ).toFixed(2)}</p>
+                <p><strong>Donation ID:</strong> ${donationRef.id}</p>
+                <p><strong>Plan Code:</strong> ${planCode}</p>
+                <p><strong>Orphanage:</strong> ${orphanageId}</p>
+                <p><strong>Charge ID:</strong> ${chargeId}</p>
+                <p><strong>Orphanage Payout:</strong> ₦${(
+                  orphanagePayout / 100
+                ).toFixed(2)}</p>
 
-          <p><strong>Error:</strong> ${splitError}</p>
+                <p><strong>Error:</strong> ${splitError}</p>
 
-          <p>Please visit the <strong>Action Center</strong> on the Orphancare dashboard to retry or resolve this split.</p>
-        `
+                <p>Please visit the <strong>Action Center</strong> on the Orphancare dashboard to retry or resolve this split.</p>
+              `
             );
 
             await apiInstance.sendTransacEmail({
@@ -268,8 +237,56 @@ export const paystackWebhook = onRequest(
             activatedAt: new Date(),
           });
         }
+      };
+
+      // ---------------------------------------------------------
+      // FIRST RECURRING PAYMENT (charge.success + plan)
+      // ---------------------------------------------------------
+      if (event.event === "charge.success" && event.data.plan?.plan_code) {
+        await handleRecurringSuccess(
+          event.data.plan.plan_code,
+          event.data.id,
+          event.data.customer.email,
+          event.data.amount / 100,
+          event.data.reference
+        );
+
+        res.status(200).send("First recurring payment processed");
+        return;
+      }
+
+      // ---------------------------------------------------------
+      // SUBSEQUENT RECURRING PAYMENT
+      // ---------------------------------------------------------
+      if (event.event === "invoice.payment_succeeded") {
+        await handleRecurringSuccess(
+          event.data.plan.plan_code,
+          event.data.id,
+          event.data.customer.email,
+          event.data.amount / 100,
+          event.data.invoice_number
+        );
 
         res.status(200).send("Recurring donation processed");
+        return;
+      }
+
+      // ---------------------------------------------------------
+      // ONE-OFF SUCCESS
+      // ---------------------------------------------------------
+      if (event.event === "charge.success") {
+        const ref = event.data.reference;
+        const snapshot = await db
+          .collection("donations")
+          .where("paystackRef", "==", ref)
+          .get();
+
+        snapshot.forEach((doc) => {
+          doc.ref.update({ status: "success", updatedAt: new Date() });
+        });
+
+        res.status(200).send("One-off success processed");
+        return;
       }
 
       // ---------------------------------------------------------
@@ -342,6 +359,7 @@ export const paystackWebhook = onRequest(
 
         logger.info(`Recurring cycle FAILED for plan ${planCode}`);
         res.status(200).send("Recurring cycle failed");
+        return;
       }
 
       // ---------------------------------------------------------
@@ -357,6 +375,9 @@ export const paystackWebhook = onRequest(
         snapshot.forEach((doc) => {
           doc.ref.update({ status: "failed", updatedAt: new Date() });
         });
+
+        res.status(200).send("One-off failure processed");
+        return;
       }
 
       res.status(200).send("Webhook processed");
