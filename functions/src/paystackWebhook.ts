@@ -39,7 +39,7 @@ export const paystackWebhook = onRequest(
         return;
       }
 
-      logger.info(`Webhook event: ${event.event}`);
+      logger.info(`Webhook event body: ${event}`);
 
       // ---------------------------------------------------------
       // ONE-OFF SUCCESS
