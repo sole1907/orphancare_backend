@@ -117,7 +117,9 @@ export const paystackWebhook = onRequest(
           }
         }
 
-        // 5. Create donation entry FIRST
+        // ---------------------------------------------------------
+        // 5. ALWAYS CREATE DONATION FIRST (status = pending)
+        // ---------------------------------------------------------
         const donationRef = await db.collection("donations").add({
           donorUid: plan.donorUid,
           donorEmail,
@@ -131,7 +133,7 @@ export const paystackWebhook = onRequest(
           differenceAbsorbed: difference,
           orphanagePayout,
           platformPayout,
-          status: "success",
+          status: "pending", // <-- IMPORTANT
           recurring: true,
           interval: plan.interval,
           createdAt: new Date(),
@@ -142,7 +144,9 @@ export const paystackWebhook = onRequest(
           splitAttemptedAt: null,
         });
 
-        // 6. Apply split
+        // ---------------------------------------------------------
+        // 6. APPLY SPLIT (safe logging + safe JSON parsing)
+        // ---------------------------------------------------------
         let splitStatus: "success" | "failed" = "failed";
         let splitError: string | null = null;
 
@@ -163,25 +167,42 @@ export const paystackWebhook = onRequest(
             }
           );
 
-          const splitData = await splitResponse.json();
+          // Log raw response ALWAYS
+          const raw = await splitResponse.text();
+          logger.error(
+            `Paystack split raw response: status=${splitResponse.status}, body=${raw}`
+          );
 
-          if (splitData.status) {
-            splitStatus = "success";
+          let splitData: any = null;
+          try {
+            splitData = JSON.parse(raw);
+          } catch {
+            logger.error("Failed to parse split response JSON");
+          }
+
+          if (!splitResponse.ok) {
+            splitStatus = "failed";
+            splitError = splitData?.message || raw || "Unknown Paystack error";
           } else {
-            splitError = splitData.message || "Unknown split failure";
+            splitStatus = "success";
           }
         } catch (err: any) {
           splitError = err.message || "Split request error";
         }
 
-        // 7. Update donation with split status
+        // ---------------------------------------------------------
+        // 7. UPDATE DONATION AFTER SPLIT ATTEMPT
+        // ---------------------------------------------------------
         await donationRef.update({
+          status: "success", // donation succeeded regardless of split
           splitStatus,
           splitError,
           splitAttemptedAt: new Date(),
         });
 
-        // 8. Notify super admin if split failed
+        // ---------------------------------------------------------
+        // 8. EMAIL ADMIN IF SPLIT FAILED
+        // ---------------------------------------------------------
         if (splitStatus === "failed") {
           logger.error(
             `Split failed for donation ${donationRef.id}: ${splitError}`
@@ -194,33 +215,33 @@ export const paystackWebhook = onRequest(
             const apiInstance = new Brevo.TransactionalEmailsApi();
 
             const wrapEmail = (title: string, bodyHtml: string) => `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background-color: #f9f9f9; border-radius: 8px;">
-                <h2 style="color: #1e3a8a; margin-bottom: 16px;">${title}</h2>
-                ${bodyHtml}
-                <p style="margin-top: 24px; font-size: 12px; color: #555;">
-                  If you have any questions, contact us at support@orphancare.org
-                </p>
-              </div>
-            `;
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background-color: #f9f9f9; border-radius: 8px;">
+          <h2 style="color: #1e3a8a; margin-bottom: 16px;">${title}</h2>
+          ${bodyHtml}
+          <p style="margin-top: 24px; font-size: 12px; color: #555;">
+            If you have any questions, contact us at support@orphancare.org
+          </p>
+        </div>
+      `;
 
             const htmlContent = wrapEmail(
               "Split Payment Failure",
               `
-                <p>Hello Admin,</p>
-                <p>A split payment attempt has <strong>failed</strong> during a recurring donation cycle.</p>
+          <p>Hello Admin,</p>
+          <p>A split payment attempt has <strong>failed</strong> during a recurring donation cycle.</p>
 
-                <p><strong>Donation ID:</strong> ${donationRef.id}</p>
-                <p><strong>Plan Code:</strong> ${planCode}</p>
-                <p><strong>Orphanage:</strong> ${orphanageId}</p>
-                <p><strong>Charge ID:</strong> ${chargeId}</p>
-                <p><strong>Orphanage Payout:</strong> ₦${(
-                  orphanagePayout / 100
-                ).toFixed(2)}</p>
+          <p><strong>Donation ID:</strong> ${donationRef.id}</p>
+          <p><strong>Plan Code:</strong> ${planCode}</p>
+          <p><strong>Orphanage:</strong> ${orphanageId}</p>
+          <p><strong>Charge ID:</strong> ${chargeId}</p>
+          <p><strong>Orphanage Payout:</strong> ₦${(
+            orphanagePayout / 100
+          ).toFixed(2)}</p>
 
-                <p><strong>Error:</strong> ${splitError}</p>
+          <p><strong>Error:</strong> ${splitError}</p>
 
-                <p>Please visit the <strong>Action Center</strong> on the Orphancare dashboard to retry or resolve this split.</p>
-              `
+          <p>Please visit the <strong>Action Center</strong> on the Orphancare dashboard to retry or resolve this split.</p>
+        `
             );
 
             await apiInstance.sendTransacEmail({
@@ -237,7 +258,9 @@ export const paystackWebhook = onRequest(
           }
         }
 
-        // 9. Mark plan active if first payment
+        // ---------------------------------------------------------
+        // 9. MARK PLAN ACTIVE IF FIRST PAYMENT
+        // ---------------------------------------------------------
         if (plan.status !== "active") {
           await planDoc.ref.update({
             status: "active",
