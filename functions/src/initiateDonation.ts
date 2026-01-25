@@ -221,25 +221,7 @@ export const initiateDonation = onRequest(
         `Recurring donation breakdown: base=${baseAmount}, tip=${tipAmount}, net=${netAmount}, gross=${grossAmount}, feeEstimate=${paystackFeeEstimate}`
       );
 
-      // 3. Initialize FIRST PAYMENT with split (capture authorization_code via webhook)
-      const initData = await initPaystackTransaction({
-        email: donorEmail,
-        amount: grossAmount * 100,
-        metadata: {
-          donorUid,
-          childId,
-          orphanageId,
-          tipPercent,
-          recurring: true,
-        },
-        callbackUrl: "https://orphancare-93b41.web.app/payment-result",
-        paystackSecretValue,
-        PAYSTACK_URI,
-        subaccount: subaccountCodeRecurring,
-        transactionCharge: platformAmount,
-      });
-
-      // 4. Store recurring plan INTENT
+      // 3. Create recurring plan FIRST (so we have planCode for metadata)
       const planCode = await createRecurringPlanIntent({
         donorUid,
         childId,
@@ -256,8 +238,29 @@ export const initiateDonation = onRequest(
         donorEmail,
       });
 
+      logger.info(`Recurring plan created: planCode=${planCode}`);
+
+      // 4. Initialize FIRST PAYMENT with split (capture authorization_code via webhook)
+      const initData = await initPaystackTransaction({
+        email: donorEmail,
+        amount: grossAmount * 100,
+        metadata: {
+          donorUid,
+          childId,
+          orphanageId,
+          tipPercent,
+          planCode,
+          recurring: true,
+        },
+        callbackUrl: "https://orphancare-93b41.web.app/payment-result",
+        paystackSecretValue,
+        PAYSTACK_URI,
+        subaccount: subaccountCodeRecurring,
+        transactionCharge: platformAmount,
+      });
+
       logger.info(
-        `Recurring plan created. planCode=${planCode}, redirecting donor to Paystack. ref=${initData.reference}`
+        `Redirecting donor to Paystack. planCode=${planCode}, ref=${initData.reference}`
       );
 
       // 5. Return checkout URL + planCode

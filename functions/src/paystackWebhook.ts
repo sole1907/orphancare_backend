@@ -4,6 +4,7 @@ import * as logger from "firebase-functions/logger";
 import { db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
 import * as crypto from "crypto";
+import { computeNextChargeAt } from "./lib/chargeAuthorization";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
@@ -163,10 +164,13 @@ async function handleRecurringChargeSuccess(event: any) {
       return;
     }
 
+    const nextChargeAt = computeNextChargeAt(new Date(), plan.interval);
+
     await planDoc.ref.update({
       authorizationCode,
       status: "active",
       activatedAt: new Date(),
+      nextChargeAt,
     });
   }
 

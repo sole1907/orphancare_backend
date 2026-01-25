@@ -74,7 +74,7 @@ export async function chargeAuthorizationForPlan({
   });
 }
 
-function computeNextChargeAt(from: Date, interval: string): Date {
+export function computeNextChargeAt(from: Date, interval: string): Date {
   const d = new Date(from);
 
   switch (interval.toLowerCase()) {
