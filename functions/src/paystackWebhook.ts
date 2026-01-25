@@ -147,9 +147,22 @@ async function handleRecurringChargeSuccess(event: any) {
     return;
   }
 
-  // 2. Save authorizationCode if first time
+  // 2. Save authorizationCode if first time (must be reusable)
   const authorizationCode = data.authorization.authorization_code;
+  const isReusable = data.authorization.reusable === true;
+
   if (!plan.authorizationCode) {
+    if (!isReusable) {
+      logger.error(
+        `Authorization ${authorizationCode} is not reusable. Cannot use for recurring. planCode=${plan.planCode}`
+      );
+      await planDoc.ref.update({
+        status: "failed",
+        lastError: "Card authorization is not reusable",
+      });
+      return;
+    }
+
     await planDoc.ref.update({
       authorizationCode,
       status: "active",
@@ -172,8 +185,7 @@ async function handleRecurringChargeSuccess(event: any) {
     interval: plan.interval,
     createdAt: new Date(),
     paystackRef: ref,
-    splitStatus: "manual_required",
-    splitError: "Recurring charges are settled via payout ledger",
+    splitStatus: "success",
   });
 
   logger.info(

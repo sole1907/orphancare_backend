@@ -170,7 +170,29 @@ export const initiateDonation = onRequest(
         `Processing RECURRING donation: donorUid=${donorUid}, childId=${childId}, orphanageId=${orphanageId}, baseAmount=${baseAmount}, tipPercent=${tipPercent}, interval=${interval}`
       );
 
-      // 1. Compute amounts
+      // 1. Fetch orphanage subaccount (same as one-off)
+      const orphanageDocRecurring = await db
+        .collection("orphanages")
+        .doc(orphanageId)
+        .get();
+      if (!orphanageDocRecurring.exists) {
+        logger.error(`Invalid orphanage: ${orphanageId}`);
+        res.status(400).send("Invalid orphanage");
+        return;
+      }
+
+      const orphanageDataRecurring = orphanageDocRecurring.data() as OrphanageData;
+      if (!orphanageDataRecurring.subaccountCode) {
+        logger.error(
+          `Orphanage has no subaccount configured: ${orphanageId}`
+        );
+        res.status(400).send("Orphanage has no subaccount configured");
+        return;
+      }
+
+      const subaccountCodeRecurring = orphanageDataRecurring.subaccountCode;
+
+      // 2. Compute amounts
       const tipAmount = Math.round(baseAmount * tipPercent);
       const netAmount = baseAmount + tipAmount;
       const grossAmount = computeGrossAmount(netAmount, config);
@@ -182,7 +204,7 @@ export const initiateDonation = onRequest(
         `Recurring donation breakdown: base=${baseAmount}, tip=${tipAmount}, net=${netAmount}, gross=${grossAmount}, feeEstimate=${paystackFeeEstimate}`
       );
 
-      // 2. Initialize FIRST PAYMENT (capture authorization_code via webhook)
+      // 3. Initialize FIRST PAYMENT with split (capture authorization_code via webhook)
       const initData = await initPaystackTransaction({
         email: donorEmail,
         amount: grossAmount * 100,
@@ -196,9 +218,11 @@ export const initiateDonation = onRequest(
         callbackUrl: "https://orphancare-93b41.web.app/payment-result",
         paystackSecretValue,
         PAYSTACK_URI,
+        subaccount: subaccountCodeRecurring,
+        transactionCharge: platformAmount,
       });
 
-      // 3. Store recurring plan INTENT
+      // 4. Store recurring plan INTENT
       const planCode = await createRecurringPlanIntent({
         donorUid,
         childId,
@@ -219,7 +243,7 @@ export const initiateDonation = onRequest(
         `Recurring plan created. planCode=${planCode}, redirecting donor to Paystack. ref=${initData.reference}`
       );
 
-      // 4. Return checkout URL + planCode
+      // 5. Return checkout URL + planCode
       res.json({
         checkoutUrl: initData.authorization_url,
         planCode,

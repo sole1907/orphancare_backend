@@ -40,12 +40,30 @@ export const chargeRecurringDonations = onSchedule(
 
       logger.info(`Charging planCode=${planCode}`);
 
+      // Fetch orphanage subaccount
+      const orphanageDoc = await db
+        .collection("orphanages")
+        .doc(plan.orphanageId)
+        .get();
+      const orphanageData = orphanageDoc.data();
+
+      if (!orphanageData?.subaccountCode) {
+        logger.error(
+          `Orphanage ${plan.orphanageId} has no subaccount. Skipping plan ${planCode}`
+        );
+        await doc.ref.update({
+          lastError: "Orphanage has no subaccount configured",
+        });
+        continue;
+      }
+
       try {
         await chargeAuthorizationForPlan({
           planDocRef: doc.ref,
           plan,
           PAYSTACK_URI,
           secret,
+          subaccountCode: orphanageData.subaccountCode,
         });
       } catch (err: any) {
         const currentRetries = plan.retryCount || 0;

@@ -7,6 +7,7 @@ interface ChargePlanParams {
   plan: any;
   PAYSTACK_URI: string;
   secret: string;
+  subaccountCode: string;
 }
 
 export async function chargeAuthorizationForPlan({
@@ -14,6 +15,7 @@ export async function chargeAuthorizationForPlan({
   plan,
   PAYSTACK_URI,
   secret,
+  subaccountCode,
 }: ChargePlanParams) {
   const { authorizationCode, customerEmail, grossAmount, interval, planCode } =
     plan;
@@ -27,6 +29,8 @@ export async function chargeAuthorizationForPlan({
     email: customerEmail,
     amount: Math.round(grossAmount * 100),
     authorization_code: authorizationCode,
+    subaccount: subaccountCode,
+    transaction_charge: plan.platformAmount,
     metadata: {
       planCode,
       recurring: true,
