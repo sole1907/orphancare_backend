@@ -78,6 +78,9 @@ function computeNextChargeAt(from: Date, interval: string): Date {
   const d = new Date(from);
 
   switch (interval.toLowerCase()) {
+    case "daily":
+      d.setDate(d.getDate() + 1);
+      break;
     case "monthly":
       d.setMonth(d.getMonth() + 1);
       break;

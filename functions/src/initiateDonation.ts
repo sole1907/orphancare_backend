@@ -170,6 +170,23 @@ export const initiateDonation = onRequest(
         `Processing RECURRING donation: donorUid=${donorUid}, childId=${childId}, orphanageId=${orphanageId}, baseAmount=${baseAmount}, tipPercent=${tipPercent}, interval=${interval}`
       );
 
+      // Validate interval (daily only allowed in non-production)
+      const isProd = process.env.ENV_TYPE === "production";
+      const allowedIntervals = ["monthly", "quarterly", "yearly"];
+      if (!isProd) {
+        allowedIntervals.push("daily");
+      }
+
+      if (!interval || !allowedIntervals.includes(interval.toLowerCase())) {
+        logger.error(
+          `Invalid interval: ${interval}. Allowed: ${allowedIntervals.join(", ")}`
+        );
+        res
+          .status(400)
+          .send(`Invalid interval. Allowed: ${allowedIntervals.join(", ")}`);
+        return;
+      }
+
       // 1. Fetch orphanage subaccount (same as one-off)
       const orphanageDocRecurring = await db
         .collection("orphanages")

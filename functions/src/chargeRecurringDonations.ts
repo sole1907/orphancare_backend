@@ -34,11 +34,21 @@ export const chargeRecurringDonations = onSchedule(
     const PAYSTACK_URI = process.env.PAYSTACK_URI || "https://api.paystack.co";
     const secret = paystackSecret.value();
 
+    const isProd = process.env.ENV_TYPE === "production";
+
     for (const doc of snapshot.docs) {
       const plan = doc.data();
       const planCode = plan.planCode;
 
       logger.info(`Charging planCode=${planCode}`);
+
+      // Skip daily plans in production (defensive measure)
+      if (isProd && plan.interval?.toLowerCase() === "daily") {
+        logger.warn(
+          `Skipping daily plan ${planCode} in production environment`
+        );
+        continue;
+      }
 
       // Fetch orphanage subaccount
       const orphanageDoc = await db
