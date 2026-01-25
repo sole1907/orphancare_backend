@@ -1,9 +1,11 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import { auth, db } from "./lib/firebaseAdmin";
+import { db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
 import fetch from "node-fetch";
 import { verifyAuth } from "./lib/authUtils";
+import { handleCors } from "./lib/corsUtils";
+import { allowedOrigins } from "./config/constants";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
@@ -12,25 +14,7 @@ export const checkDonationStatus = onRequest(
   async (req, res) => {
     logger.info("Incoming headers:\n" + JSON.stringify(req.headers, null, 2));
 
-    const allowedOrigins = [
-      "https://orphancare-93b41.web.app",
-      "http://localhost:3000",
-    ];
-    const origin = req.headers.origin;
-    if (origin && allowedOrigins.includes(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-    }
-    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, Origin, Accept"
-    );
-
-    if (req.method === "OPTIONS") {
-      logger.info("Preflight request received FROM ", origin);
-      res.status(204).send("");
-      return;
-    }
+    if (handleCors(req, res, allowedOrigins)) return;
 
     try {
       logger.info("checkDonationStatus triggered");
@@ -52,10 +36,14 @@ export const checkDonationStatus = onRequest(
         return;
       }
 
-      const docRef = db.collection("donations").doc(reference);
-      const doc = await docRef.get();
+      const snapshot = await db
+        .collection("donations")
+        .where("paystackRef", "==", reference)
+        .limit(1)
+        .get();
 
-      if (doc.exists) {
+      if (!snapshot.empty) {
+        const doc = snapshot.docs[0];
         const status = doc.data()?.status;
         if (status === "success" || status === "failed") {
           res.json({ status });
@@ -82,8 +70,16 @@ export const checkDonationStatus = onRequest(
       const paystackStatus = result.data?.status; // "success" | "failed" | "pending"
 
       if (paystackStatus === "success" || paystackStatus === "failed") {
-        await docRef.set({ status: paystackStatus }, { merge: true });
-        res.json({ status: paystackStatus });
+        if (!snapshot.empty) {
+          await snapshot.docs[0].ref.update({
+            status: paystackStatus,
+            updatedAt: new Date(),
+          });
+          res.json({ status: paystackStatus });
+        } else {
+          logger.error(`No donation found for reference: ${reference}`);
+          res.status(404).send("Donation not found");
+        }
       } else {
         res.json({ status: "pending" });
       }

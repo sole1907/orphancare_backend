@@ -1,0 +1,91 @@
+// functions/src/lib/chargeAuthorization.ts
+import fetch from "node-fetch";
+import * as logger from "firebase-functions/logger";
+
+interface ChargePlanParams {
+  planDocRef: FirebaseFirestore.DocumentReference;
+  plan: any;
+  PAYSTACK_URI: string;
+  secret: string;
+}
+
+export async function chargeAuthorizationForPlan({
+  planDocRef,
+  plan,
+  PAYSTACK_URI,
+  secret,
+}: ChargePlanParams) {
+  const { authorizationCode, customerEmail, grossAmount, interval, planCode } =
+    plan;
+
+  if (!authorizationCode) {
+    logger.error(`Plan ${planCode} has no authorizationCode`);
+    return;
+  }
+
+  const body = {
+    email: customerEmail,
+    amount: Math.round(grossAmount * 100),
+    authorization_code: authorizationCode,
+    metadata: {
+      planCode,
+      recurring: true,
+      orphanageId: plan.orphanageId,
+      childId: plan.childId,
+      donorUid: plan.donorUid,
+    },
+  };
+
+  logger.info(
+    `Charging authorization for planCode=${planCode}, email=${customerEmail}, amount=${body.amount}`
+  );
+
+  const response = await fetch(
+    `${PAYSTACK_URI}/transaction/charge_authorization`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    }
+  );
+
+  const raw = await response.text();
+  logger.info(
+    `charge_authorization raw response: status=${response.status}, body=${raw}`
+  );
+
+  // We rely on charge.success webhook as source of truth.
+  // Here we only update nextChargeAt / retryCount.
+
+  const now = new Date();
+  const nextChargeAt = computeNextChargeAt(now, interval);
+
+  await planDocRef.update({
+    lastChargeAt: now,
+    nextChargeAt,
+    retryCount: 0,
+  });
+}
+
+function computeNextChargeAt(from: Date, interval: string): Date {
+  const d = new Date(from);
+
+  switch (interval.toLowerCase()) {
+    case "monthly":
+      d.setMonth(d.getMonth() + 1);
+      break;
+    case "quarterly":
+      d.setMonth(d.getMonth() + 3);
+      break;
+    case "yearly":
+      d.setFullYear(d.getFullYear() + 1);
+      break;
+    default:
+      throw new Error(`Unsupported interval: ${interval}`);
+  }
+
+  return d;
+}

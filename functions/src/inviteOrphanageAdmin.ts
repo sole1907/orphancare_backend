@@ -4,6 +4,8 @@ import { auth, db } from "./lib/firebaseAdmin";
 import Brevo from "sib-api-v3-sdk";
 import { defineSecret } from "firebase-functions/params";
 import { verifyAuth } from "./lib/authUtils";
+import { handleCors } from "./lib/corsUtils";
+import { allowedOrigins } from "./config/constants";
 
 const brevoApiKey = defineSecret("BREVO_API_KEY");
 
@@ -12,26 +14,7 @@ export const inviteOrphanageAdmin = onRequest(
   async (req, res) => {
     logger.info("Incoming headers:\n" + JSON.stringify(req.headers, null, 2));
 
-    const allowedOrigins = [
-      "https://orphancare-93b41.web.app",
-      "http://localhost:3000",
-    ];
-
-    const origin = req.headers.origin;
-    if (origin && allowedOrigins.includes(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-    }
-    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, Origin, Accept"
-    );
-
-    if (req.method === "OPTIONS") {
-      logger.info("Preflight request received FROM ", origin);
-      res.status(204).send("");
-      return;
-    }
+    if (handleCors(req, res, allowedOrigins)) return;
 
     try {
       logger.info("inviteOrphanageAdmin triggered");

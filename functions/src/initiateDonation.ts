@@ -1,42 +1,32 @@
-// functions/src/initiateDonation.ts
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { auth, db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
-import fetch from "node-fetch";
 import { verifyAuth } from "./lib/authUtils";
 import { OrphanageData } from "./types/orphanage";
 import { loadFeeConfig, computeGrossAmount } from "./lib/feeEngine";
+
+import { handleCors } from "./lib/corsUtils";
+import { initPaystackTransaction } from "./lib/paystackUtils";
+import {
+  computeDonationAmounts,
+  logDonationIntent,
+  createRecurringPlanIntent,
+} from "./lib/donationUtils";
+import { allowedOrigins } from "./config/constants";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
 export const initiateDonation = onRequest(
   { region: "europe-west1", secrets: [paystackSecret] },
   async (req, res) => {
-    logger.info("Incoming headers:\n" + JSON.stringify(req.headers, null, 2));
+    logger.info("initiateDonation: incoming headers", req.headers);
 
-    const allowedOrigins = [
-      "https://orphancare-93b41.web.app",
-      "http://localhost:3000",
-    ];
-    const origin = req.headers.origin;
-    if (origin && allowedOrigins.includes(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-    }
-    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, Origin, Accept"
-    );
-
-    if (req.method === "OPTIONS") {
-      logger.info("Preflight request received FROM ", origin);
-      res.status(204).send("");
-      return;
-    }
+    if (handleCors(req, res, allowedOrigins)) return;
 
     try {
       logger.info("initiateDonation triggered");
+
       const {
         donorUid,
         donorEmail,
@@ -51,101 +41,108 @@ export const initiateDonation = onRequest(
       // 🔐 Auth check
       try {
         const decoded = await verifyAuth(req);
-        logger.info(`Donation triggered by ${decoded.uid}`);
+        logger.info(`Donation triggered by uid=${decoded.uid}`);
         if (decoded.uid !== donorUid) {
+          logger.error(
+            `Forbidden: UID mismatch. decoded=${decoded.uid}, donorUid=${donorUid}`
+          );
           res.status(403).send("Forbidden: UID mismatch");
           return;
         }
       } catch (err: any) {
-        logger.error("Auth error", err);
+        logger.error("Auth error in initiateDonation", err);
         res.status(err.code || 500).send(err.message || "Internal error");
         return;
       }
 
       if (!donorUid || !donorEmail || !childId || !orphanageId || !baseAmount) {
+        logger.error(
+          "Missing required fields in initiateDonation",
+          req.body || {}
+        );
         res.status(400).send("Missing required fields");
-        logger.error("Missing required fields");
         return;
       }
 
       const PAYSTACK_URI =
         process.env.PAYSTACK_URI || "https://api.paystack.co";
+      const paystackSecretValue = paystackSecret.value();
 
       const config = await loadFeeConfig();
+      logger.info("Loaded fee config", config);
 
-      // One-off donation
+      // ---------------------------------------------------------
+      // ONE-OFF DONATION
+      // ---------------------------------------------------------
       if (!recurring) {
+        logger.info(
+          `Processing ONE-OFF donation: donorUid=${donorUid}, childId=${childId}, orphanageId=${orphanageId}, baseAmount=${baseAmount}, tipPercent=${tipPercent}`
+        );
+
         // 1. Fetch orphanage subaccount
         const orphanageDoc = await db
           .collection("orphanages")
           .doc(orphanageId)
           .get();
         if (!orphanageDoc.exists) {
+          logger.error(`Invalid orphanage: ${orphanageId}`);
           res.status(400).send("Invalid orphanage");
           return;
         }
 
         const orphanageData = orphanageDoc.data() as OrphanageData;
         if (!orphanageData.subaccountCode) {
+          logger.error(
+            `Orphanage has no subaccount configured: ${orphanageId}`
+          );
           res.status(400).send("Orphanage has no subaccount configured");
           return;
         }
 
         const subaccountCode = orphanageData.subaccountCode;
 
-        // 2. Compute amounts (server-side, ignore client’s fee assumptions)
+        // 2. Compute amounts
         const tipAmount = Math.round(baseAmount * tipPercent);
         const netAmount = baseAmount + tipAmount;
-
         const grossAmount = computeGrossAmount(netAmount, config);
         const paystackFee = grossAmount - netAmount;
-
-        const orphanageAmount = Math.round(baseAmount * 100); // in kobo
-        const platformAmount = Math.round(tipAmount * 100); // in kobo
+        const orphanageAmount = Math.round(baseAmount * 100);
+        const platformAmount = Math.round(tipAmount * 100);
 
         logger.info(
-          `Donation breakdown: base=${baseAmount}, tip=${tipAmount}, net=${netAmount}, fee=${paystackFee}, gross=${grossAmount}`
+          `One-off donation breakdown: base=${baseAmount}, tip=${tipAmount}, net=${netAmount}, fee=${paystackFee}, gross=${grossAmount}`
         );
 
         // 3. Initialize Paystack transaction
-        const response = await fetch(`${PAYSTACK_URI}/transaction/initialize`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${paystackSecret.value()}`,
-            "Content-Type": "application/json",
+        const initData = await initPaystackTransaction({
+          email: donorEmail,
+          amount: grossAmount * 100,
+          metadata: {
+            donorUid,
+            childId,
+            orphanageId,
+            tipPercent,
+            baseAmount,
+            tipAmount,
+            netAmount,
+            paystackFee,
+            grossAmount,
+            recurring: false,
           },
-          body: JSON.stringify({
-            email: donorEmail,
-            amount: grossAmount * 100, // donor pays fee
-            subaccount: subaccountCode,
-            bearer: "subaccount",
-            transaction_charge: platformAmount, // platform receives tip
-            metadata: {
-              donorUid,
-              childId,
-              orphanageId,
-              tipPercent,
-              baseAmount,
-              tipAmount,
-              netAmount,
-              paystackFee,
-              grossAmount,
-            },
-            callback_url: "https://orphancare-93b41.web.app/payment-result",
-          }),
+          callbackUrl: "https://orphancare-93b41.web.app/payment-result",
+          paystackSecretValue,
+          PAYSTACK_URI,
+          subaccount: subaccountCode,
+          transactionCharge: platformAmount,
         });
 
-        const data = await response.json();
-        if (!data.status) {
-          throw new Error(data.message || "Paystack init failed");
-        }
-
         // 4. Log donation intent
-        await db.collection("donations").add({
+        await logDonationIntent({
           donorUid,
+          donorEmail,
           childId,
           orphanageId,
-          amount: grossAmount, // what donor will actually be charged
+          grossAmount,
           baseAmount,
           tipPercent,
           tipAmount,
@@ -155,122 +152,80 @@ export const initiateDonation = onRequest(
           platformAmount,
           recurring: false,
           interval: null,
-          paystackRef: data.data.reference,
-          createdAt: new Date(),
-          status: "pending",
+          paystackRef: initData.reference,
         });
-
-        res.json({ checkoutUrl: data.data.authorization_url });
-        //---------------------------------------------------------
-        // RECURRING DONATION (PLAN CREATION + FIRST PAYMENT)
-        //---------------------------------------------------------
-      } else {
-        // 1. Compute amounts
-        const tipAmount = Math.round(baseAmount * tipPercent);
-        const netAmount = baseAmount + tipAmount;
-
-        // Donor pays fee → gross-up
-        const grossAmount = computeGrossAmount(netAmount, config);
-        const paystackFeeEstimate = grossAmount - netAmount;
-
-        const orphanageAmount = Math.round(baseAmount * 100); // kobo
-        const platformAmount = Math.round(tipAmount * 100); // kobo
 
         logger.info(
-          `Recurring donation breakdown: base=${baseAmount}, tip=${tipAmount}, net=${netAmount}, gross=${grossAmount}, feeEstimate=${paystackFeeEstimate}`
+          `One-off donation initialized successfully. Redirecting donor to Paystack. ref=${initData.reference}`
         );
 
-        //---------------------------------------------------------
-        // 2. Create Paystack plan using grossAmount
-        //---------------------------------------------------------
-        const planResponse = await fetch(`${PAYSTACK_URI}/plan`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${paystackSecret.value()}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: `Donation Plan ${interval}`,
-            interval: interval.toLowerCase(),
-            amount: grossAmount * 100, // donor pays fee buffer
-          }),
-        });
+        res.json({ checkoutUrl: initData.authorization_url });
+        return;
+      }
 
-        const planData = await planResponse.json();
-        if (!planData.status) {
-          throw new Error(planData.message || "Paystack plan failed");
-        }
+      // ---------------------------------------------------------
+      // RECURRING DONATION (CHARGE AUTHORIZATION MODEL)
+      // ---------------------------------------------------------
+      logger.info(
+        `Processing RECURRING donation: donorUid=${donorUid}, childId=${childId}, orphanageId=${orphanageId}, baseAmount=${baseAmount}, tipPercent=${tipPercent}, interval=${interval}`
+      );
 
-        const planId = planData.data.id; // numeric (not used)
-        const planCode = planData.data.plan_code; // REAL recurring identifier
+      // 1. Compute amounts
+      const tipAmount = Math.round(baseAmount * tipPercent);
+      const netAmount = baseAmount + tipAmount;
+      const grossAmount = computeGrossAmount(netAmount, config);
+      const paystackFeeEstimate = grossAmount - netAmount;
+      const orphanageAmount = Math.round(baseAmount * 100);
+      const platformAmount = Math.round(tipAmount * 100);
 
-        //---------------------------------------------------------
-        // 3. Store recurring donation INTENT (subscription definition)
-        //    This is NOT a donation. It is the plan metadata.
-        //---------------------------------------------------------
-        await db.collection("recurringPlans").doc(planCode).set({
+      logger.info(
+        `Recurring donation breakdown: base=${baseAmount}, tip=${tipAmount}, net=${netAmount}, gross=${grossAmount}, feeEstimate=${paystackFeeEstimate}`
+      );
+
+      // 2. Initialize FIRST PAYMENT (capture authorization_code via webhook)
+      const initData = await initPaystackTransaction({
+        email: donorEmail,
+        amount: grossAmount * 100,
+        metadata: {
           donorUid,
           childId,
           orphanageId,
-          baseAmount,
           tipPercent,
-          tipAmount,
-          netAmount,
-          grossAmount,
-          paystackFeeEstimate,
-          orphanageAmount,
-          platformAmount,
-          interval,
-          planCode,
-          planId,
-          createdAt: new Date(),
-          status: "pending", // becomes "active" after first payment succeeds
-        });
+          recurring: true,
+        },
+        callbackUrl: "https://orphancare-93b41.web.app/payment-result",
+        paystackSecretValue,
+        PAYSTACK_URI,
+      });
 
-        //---------------------------------------------------------
-        // 4. Initialize FIRST PAYMENT (required by Paystack)
-        //---------------------------------------------------------
-        const initResponse = await fetch(
-          `${PAYSTACK_URI}/transaction/initialize`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${paystackSecret.value()}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              email: donorEmail,
-              amount: grossAmount * 100,
-              plan: planCode, // MUST be plan_code
-              metadata: {
-                donorUid,
-                childId,
-                orphanageId,
-                tipPercent,
-                planCode,
-              },
-              callback_url: "https://orphancare-93b41.web.app/payment-result",
-            }),
-          }
-        );
+      // 3. Store recurring plan INTENT
+      const planCode = await createRecurringPlanIntent({
+        donorUid,
+        childId,
+        orphanageId,
+        baseAmount,
+        tipPercent,
+        tipAmount,
+        netAmount,
+        grossAmount,
+        paystackFeeEstimate,
+        orphanageAmount,
+        platformAmount,
+        interval,
+        donorEmail,
+      });
 
-        const initData = await initResponse.json();
-        if (!initData.status) {
-          throw new Error(
-            initData.message || "Failed to initialize first payment"
-          );
-        }
+      logger.info(
+        `Recurring plan created. planCode=${planCode}, redirecting donor to Paystack. ref=${initData.reference}`
+      );
 
-        //---------------------------------------------------------
-        // 5. Return checkout URL + planCode to Flutter
-        //---------------------------------------------------------
-        res.json({
-          checkoutUrl: initData.data.authorization_url,
-          planCode: String(planCode),
-        });
-      }
+      // 4. Return checkout URL + planCode
+      res.json({
+        checkoutUrl: initData.authorization_url,
+        planCode,
+      });
     } catch (error) {
-      logger.error("Donation error", error);
+      logger.error("Donation error in initiateDonation", error);
       res.status(500).send("Internal error");
     }
   }

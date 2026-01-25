@@ -4,31 +4,15 @@ import { db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
 import fetch from "node-fetch";
 import { verifyAuth } from "./lib/authUtils";
+import { handleCors } from "./lib/corsUtils";
+import { allowedOrigins } from "./config/constants";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
 export const refreshBanks = onRequest(
   { region: "europe-west1", secrets: [paystackSecret] },
   async (req, res) => {
-    // CORS setup
-    const allowedOrigins = [
-      "https://orphancare-93b41.web.app",
-      "http://localhost:3000",
-    ];
-    const origin = req.headers.origin;
-    if (origin && allowedOrigins.includes(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-    }
-    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, Origin, Accept"
-    );
-
-    if (req.method === "OPTIONS") {
-      res.status(204).send("");
-      return;
-    }
+    if (handleCors(req, res, allowedOrigins)) return;
 
     try {
       logger.info("refreshBanks triggered");

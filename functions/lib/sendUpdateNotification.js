@@ -2,10 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendUpdateNotification = void 0;
 const firestore_1 = require("firebase-functions/v2/firestore");
-const firebaseAdmin_1 = require("./firebaseAdmin");
-require("./firebaseAdmin");
+const firebaseAdmin_1 = require("./lib/firebaseAdmin");
 exports.sendUpdateNotification = (0, firestore_1.onDocumentCreated)({
-    region: "europe-west1", // 👈 match your Firestore region
+    region: "europe-west1",
     document: "updates/{updateId}",
 }, async (event) => {
     const update = event.data?.data();
@@ -18,5 +17,5 @@ exports.sendUpdateNotification = (0, firestore_1.onDocumentCreated)({
         },
         topic: "donors",
     };
-    await (0, firebaseAdmin_1.getMessaging)().send(message);
+    await firebaseAdmin_1.messaging.send(message);
 });

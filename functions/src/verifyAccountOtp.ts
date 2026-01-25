@@ -2,31 +2,15 @@ import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { db } from "./lib/firebaseAdmin";
 import { verifyAuth } from "./lib/authUtils";
+import { handleCors } from "./lib/corsUtils";
+import { allowedOrigins } from "./config/constants";
 
 export const verifyAccountOtp = onRequest(
   { region: "europe-west1" },
   async (req, res) => {
     logger.info("Incoming headers:\n" + JSON.stringify(req.headers, null, 2));
 
-    const allowedOrigins = [
-      "https://orphancare-93b41.web.app",
-      "http://localhost:3000",
-    ];
-    const origin = req.headers.origin;
-    if (origin && allowedOrigins.includes(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-    }
-    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-    res.setHeader(
-      "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, Origin, Accept"
-    );
-
-    if (req.method === "OPTIONS") {
-      logger.info("Preflight request received FROM ", origin);
-      res.status(204).send("");
-      return;
-    }
+    if (handleCors(req, res, allowedOrigins)) return;
 
     if (req.method !== "POST") {
       res.status(405).send("Method not allowed");
