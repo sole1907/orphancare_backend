@@ -1,5 +1,6 @@
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
-import { messaging } from "./lib/firebaseAdmin";
+import * as logger from "firebase-functions/logger";
+import { db, messaging } from "./lib/firebaseAdmin";
 
 export const sendUpdateNotification = onDocumentCreated(
   {
@@ -10,14 +11,133 @@ export const sendUpdateNotification = onDocumentCreated(
     const update = event.data?.data();
     if (!update) return;
 
-    const message = {
-      notification: {
-        title: update.title,
-        body: update.body.slice(0, 100) + "...",
-      },
-      topic: "donors",
-    };
+    const updateId = event.params.updateId;
+    const orphanageId = update.orphanageId;
+    const childId = update.childId || null;
+    const orphanageName = update.orphanageName || "An orphanage";
 
-    await messaging.send(message);
+    logger.info(
+      `sendUpdateNotification triggered for update ${updateId}, orphanage ${orphanageId}, child ${childId}`
+    );
+
+    try {
+      // Collect donor UIDs who should receive this notification
+      const donorUids = new Set<string>();
+
+      // Calculate 12 months ago for donation queries
+      const twelveMonthsAgo = new Date();
+      twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+
+      if (childId) {
+        // Child-specific update: notify donors who follow this child or donated to this child
+
+        // 1. Get donors who follow this child
+        const followsSnapshot = await db
+          .collectionGroup("children")
+          .where("__name__", ">=", `donor_follows/`)
+          .get();
+
+        // Filter to find followers of this specific child
+        // The document path is donor_follows/{donorId}/children/{childId}
+        followsSnapshot.docs.forEach((doc) => {
+          const pathParts = doc.ref.path.split("/");
+          if (pathParts.length === 4 && pathParts[3] === childId) {
+            donorUids.add(pathParts[1]); // donorId
+          }
+        });
+
+        // 2. Get donors who donated to this child in last 12 months
+        const donationsSnapshot = await db
+          .collection("donations")
+          .where("childId", "==", childId)
+          .where("createdAt", ">=", twelveMonthsAgo)
+          .where("status", "==", "success")
+          .get();
+
+        donationsSnapshot.docs.forEach((doc) => {
+          const donorUid = doc.data().donorUid;
+          if (donorUid) donorUids.add(donorUid);
+        });
+      } else {
+        // Orphanage-level update: notify donors who donated to this orphanage
+        const donationsSnapshot = await db
+          .collection("donations")
+          .where("orphanageId", "==", orphanageId)
+          .where("createdAt", ">=", twelveMonthsAgo)
+          .where("status", "==", "success")
+          .get();
+
+        donationsSnapshot.docs.forEach((doc) => {
+          const donorUid = doc.data().donorUid;
+          if (donorUid) donorUids.add(donorUid);
+        });
+      }
+
+      logger.info(`Found ${donorUids.size} donors to notify`);
+
+      if (donorUids.size === 0) {
+        logger.info("No donors to notify, skipping");
+        return;
+      }
+
+      // Get FCM tokens for these donors
+      const donorUidArray = Array.from(donorUids);
+      const fcmTokens: string[] = [];
+
+      // Process in batches of 30 (Firestore "in" query limit)
+      for (let i = 0; i < donorUidArray.length; i += 30) {
+        const batch = donorUidArray.slice(i, i + 30);
+        const donorsSnapshot = await db
+          .collection("donors")
+          .where("__name__", "in", batch.map((uid) => uid))
+          .get();
+
+        donorsSnapshot.docs.forEach((doc) => {
+          const fcmToken = doc.data().fcmToken;
+          if (fcmToken) fcmTokens.push(fcmToken);
+        });
+      }
+
+      logger.info(`Found ${fcmTokens.length} FCM tokens`);
+
+      if (fcmTokens.length === 0) {
+        logger.info("No FCM tokens found, skipping");
+        return;
+      }
+
+      // Send multicast notification
+      const message = {
+        notification: {
+          title: `New update from ${orphanageName}`,
+          body: update.title || update.body?.slice(0, 100) + "...",
+        },
+        data: {
+          type: "update",
+          updateId: updateId,
+          ...(childId && { childId: childId }),
+        },
+        tokens: fcmTokens,
+      };
+
+      const response = await messaging.sendEachForMulticast(message);
+
+      logger.info(
+        `Notifications sent: ${response.successCount} success, ${response.failureCount} failed`
+      );
+
+      // Optionally clean up invalid tokens
+      if (response.failureCount > 0) {
+        const failedTokens: string[] = [];
+        response.responses.forEach((resp, idx) => {
+          if (!resp.success) {
+            failedTokens.push(fcmTokens[idx]);
+            logger.warn(`Failed to send to token: ${resp.error?.message}`);
+          }
+        });
+        // Could update donors collection to remove invalid tokens here
+      }
+    } catch (error) {
+      logger.error("sendUpdateNotification error", error);
+    }
   }
 );

@@ -14,3 +14,4 @@ export * from "./approveOrphanageAccount";
 export * from "./submitAccountDetails";
 export * from "./calculateDonationFee";
 export * from "./retrySplit";
+export * from "./getUpdatesForDonor";

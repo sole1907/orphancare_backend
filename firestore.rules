@@ -46,11 +46,26 @@ service cloud.firestore {
                   && request.auth.token.superAdmin == true;
     }
 
-    // Updates: orphanageAdmins can create, donors can read
+    // Updates: orphanageAdmins can manage their own, superAdmins can read all and delete (moderation)
     match /updates/{id} {
-      allow create: if request.auth.token.orphanageAdmin == true
-  && request.resource.data.orphanageId == request.auth.token.orphanageId;
-      allow read: if request.auth.token.donor == true;
+      // Anyone authenticated can read (filtering done by backend/query)
+      allow read: if request.auth != null;
+
+      // Only orphanage admins can create updates for their own orphanage
+      allow create: if request.auth != null
+        && request.auth.token.orphanageAdmin == true
+        && request.resource.data.orphanageId == request.auth.token.orphanageId;
+
+      // Only orphanage admins can update their own orphanage's updates
+      allow update: if request.auth != null
+        && request.auth.token.orphanageAdmin == true
+        && resource.data.orphanageId == request.auth.token.orphanageId;
+
+      // Orphanage admins can delete own updates, super admins can delete any (moderation)
+      allow delete: if request.auth != null
+        && (request.auth.token.superAdmin == true
+            || (request.auth.token.orphanageAdmin == true
+                && resource.data.orphanageId == request.auth.token.orphanageId));
     }
 
     // Payments: donors can create, superAdmins & orphanageAdmins can read
