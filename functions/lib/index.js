@@ -30,3 +30,4 @@ __exportStar(require("./approveOrphanageAccount"), exports);
 __exportStar(require("./submitAccountDetails"), exports);
 __exportStar(require("./calculateDonationFee"), exports);
 __exportStar(require("./retrySplit"), exports);
+__exportStar(require("./getUpdatesForDonor"), exports);
