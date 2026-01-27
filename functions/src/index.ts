@@ -15,3 +15,4 @@ export * from "./submitAccountDetails";
 export * from "./calculateDonationFee";
 export * from "./retrySplit";
 export * from "./getUpdatesForDonor";
+export * from "./getDonationHistory";
