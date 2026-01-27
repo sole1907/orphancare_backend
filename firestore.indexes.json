@@ -90,14 +90,15 @@
         { "fieldPath": "donorId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "follows",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "childId", "order": "ASCENDING" }
-      ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "follows",
+      "fieldPath": "childId",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    }
+  ]
 }
