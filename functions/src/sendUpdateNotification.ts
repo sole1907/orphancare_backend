@@ -33,15 +33,15 @@ export const sendUpdateNotification = onDocumentCreated(
 
         // 1. Get donors who follow this child
         const followsSnapshot = await db
-          .collectionGroup("children")
-          .where("__name__", ">=", `donor_follows/`)
+          .collectionGroup("follows")
+          .where("childId", "==", childId)
           .get();
 
-        // Filter to find followers of this specific child
-        // The document path is donor_follows/{donorId}/children/{childId}
+        // Extract donorIds from document paths
+        // The document path is donor_follows/{donorId}/follows/{childId}
         followsSnapshot.docs.forEach((doc) => {
           const pathParts = doc.ref.path.split("/");
-          if (pathParts.length === 4 && pathParts[3] === childId) {
+          if (pathParts.length === 4 && pathParts[0] === "donor_follows") {
             donorUids.add(pathParts[1]); // donorId
           }
         });

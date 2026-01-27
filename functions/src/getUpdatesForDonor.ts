@@ -30,7 +30,7 @@ export const getUpdatesForDonor = onRequest(
       const followedSnapshot = await db
         .collection("donor_follows")
         .doc(donorUid)
-        .collection("children")
+        .collection("follows")
         .get();
 
       const followedChildIds = followedSnapshot.docs.map((doc) => doc.id);
