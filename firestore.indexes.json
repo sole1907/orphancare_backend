@@ -78,6 +78,16 @@
       ]
     },
     {
+      "collectionGroup": "donations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "orphanageId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "ASCENDING" },
+        { "fieldPath": "__name__", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "updates",
       "queryScope": "COLLECTION",
       "fields": [
