@@ -181,7 +181,15 @@ async function handleRecurringChargeSuccess(event: any) {
     childId,
     orphanageId,
     planCode: plan.planCode,
+    // Amount fields for consistency with single donations
+    amount: grossAmount,
     grossAmount,
+    baseAmount: plan.baseAmount || 0,
+    tipAmount: plan.tipAmount || 0,
+    tipPercent: plan.tipPercent || 0,
+    netAmount: plan.netAmount || 0,
+    paystackFee: plan.paystackFeeEstimate || 0,
+    // Payout fields
     orphanagePayout: plan.orphanageAmount,
     platformPayout: plan.platformAmount,
     status: "success",
