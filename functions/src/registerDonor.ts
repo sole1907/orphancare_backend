@@ -59,6 +59,7 @@ export const registerDonor = onRequest(
         country,
         status: "inactive",
         createdAt: new Date(),
+        pushNotificationsEnabled: true,
       };
 
       // Add optional fields if provided

@@ -93,8 +93,13 @@ export const sendUpdateNotification = onDocumentCreated(
           .get();
 
         donorsSnapshot.docs.forEach((doc) => {
-          const fcmToken = doc.data().fcmToken;
-          if (fcmToken) fcmTokens.push(fcmToken);
+          const data = doc.data();
+          const fcmToken = data.fcmToken;
+          // Check if push notifications are enabled (default true for existing donors)
+          const pushEnabled = data.pushNotificationsEnabled !== false;
+          if (fcmToken && pushEnabled) {
+            fcmTokens.push(fcmToken);
+          }
         });
       }
 
