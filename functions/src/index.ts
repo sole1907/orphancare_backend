@@ -16,3 +16,5 @@ export * from "./calculateDonationFee";
 export * from "./retrySplit";
 export * from "./getUpdatesForDonor";
 export * from "./getDonationHistory";
+export * from "./chargeRecurringDonations";
+export * from "./getFAQs";
