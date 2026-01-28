@@ -10,6 +10,7 @@ interface DonationHistoryItem {
   amount: number;
   baseAmount: number;
   tipAmount: number;
+  paystackFee: number;
   childId: string;
   childName: string | null;
   childPhoto: string | null;
@@ -92,7 +93,7 @@ export const getDonationHistory = onRequest(
               const data = doc.data();
               childMap.set(doc.id, {
                 name: data?.name || "Unknown Child",
-                photo: data?.photo || null,
+                photo: data?.photoUrl || null,
               });
             }
           });
@@ -124,9 +125,10 @@ export const getDonationHistory = onRequest(
 
         return {
           id: doc.id,
-          amount: data.amount || data.netAmount || 0,
+          amount: data.amount || data.netAmount || data.grossAmount || 0,
           baseAmount: data.baseAmount || 0,
           tipAmount: data.tipAmount || 0,
+          paystackFee: data.paystackFee || 0,
           childId: data.childId,
           childName: child?.name || null,
           childPhoto: child?.photo || null,
