@@ -33,24 +33,36 @@ export const submitSupportTicket = onRequest(
       const { category, subject, message } = req.body;
 
       // Validate category
-      const validCategories = ["general", "donation", "account", "technical", "other"];
+      const validCategories = [
+        "general",
+        "donation",
+        "account",
+        "technical",
+        "other",
+      ];
       if (!category || !validCategories.includes(category)) {
         res
           .status(400)
-          .send(
-            `Category must be one of: ${validCategories.join(", ")}`
-          );
+          .send(`Category must be one of: ${validCategories.join(", ")}`);
         return;
       }
 
       // Validate subject
-      if (!subject || typeof subject !== "string" || subject.trim().length === 0) {
+      if (
+        !subject ||
+        typeof subject !== "string" ||
+        subject.trim().length === 0
+      ) {
         res.status(400).send("Subject is required");
         return;
       }
 
       // Validate message
-      if (!message || typeof message !== "string" || message.trim().length === 0) {
+      if (
+        !message ||
+        typeof message !== "string" ||
+        message.trim().length === 0
+      ) {
         res.status(400).send("Message is required");
         return;
       }
@@ -61,7 +73,8 @@ export const submitSupportTicket = onRequest(
         const donorDoc = await db.collection("donors").doc(donorUid).get();
         if (donorDoc.exists) {
           const donorData = donorDoc.data();
-          donorName = donorData?.name || donorData?.displayName || "Unknown Donor";
+          donorName =
+            donorData?.name || donorData?.displayName || "Unknown Donor";
         }
       } catch (err) {
         logger.warn("Could not fetch donor name", err);
@@ -100,8 +113,8 @@ export const submitSupportTicket = onRequest(
 
         await apiInstance.sendTransacEmail({
           sender: {
-            email: process.env.SENDER_EMAIL || "noreply@orphancare.org",
-            name: process.env.SENDER_NAME || "OrphanCare Support",
+            email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
+            name: process.env.SENDER_NAME || "Sola",
           },
           to: [{ email: "support@orphancare.org" }],
           replyTo: { email: donorEmail, name: donorName },
@@ -130,17 +143,18 @@ export const submitSupportTicket = onRequest(
       }
 
       logger.info(
-        `Support ticket created: ${ticketRef.id}, category: ${category}`
+        `Support ticket created: ${ticketRef.id}, category: ${category}`,
       );
 
       res.json({
         success: true,
-        message: "Your message has been sent. We'll respond to your email within 24-48 hours.",
+        message:
+          "Your message has been sent. We'll respond to your email within 24-48 hours.",
         ticketId: ticketRef.id,
       });
     } catch (error) {
       logger.error("submitSupportTicket error", error);
       res.status(500).send("Internal error");
     }
-  }
+  },
 );
