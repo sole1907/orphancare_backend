@@ -153,13 +153,6 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "orphanageId", "order": "ASCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "donors",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "lifetimeDonations", "order": "DESCENDING" }
-      ]
     }
   ],
   "fieldOverrides": [
