@@ -113,9 +113,13 @@ exports.sendUpdateNotification = (0, firestore_1.onDocumentCreated)({
                 .where("__name__", "in", batch.map((uid) => uid))
                 .get();
             donorsSnapshot.docs.forEach((doc) => {
-                const fcmToken = doc.data().fcmToken;
-                if (fcmToken)
+                const data = doc.data();
+                const fcmToken = data.fcmToken;
+                // Check if push notifications are enabled (default true for existing donors)
+                const pushEnabled = data.pushNotificationsEnabled !== false;
+                if (fcmToken && pushEnabled) {
                     fcmTokens.push(fcmToken);
+                }
             });
         }
         logger.info(`Found ${fcmTokens.length} FCM tokens`);

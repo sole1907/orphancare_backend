@@ -31,3 +31,6 @@ __exportStar(require("./submitAccountDetails"), exports);
 __exportStar(require("./calculateDonationFee"), exports);
 __exportStar(require("./retrySplit"), exports);
 __exportStar(require("./getUpdatesForDonor"), exports);
+__exportStar(require("./getDonationHistory"), exports);
+__exportStar(require("./chargeRecurringDonations"), exports);
+__exportStar(require("./getFAQs"), exports);
