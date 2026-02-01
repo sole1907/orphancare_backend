@@ -156,18 +156,17 @@ export const getDonations = onRequest(
           }
         }
 
-        const amount = donation.amount ?? 0;
+        const baseAmount = donation.baseAmount ?? 0;
         const tipAmount = donation.tipAmount ?? 0;
         const paystackFee = donation.paystackFee ?? 0;
-        const netAmount =
-          donation.netAmount ?? amount - tipAmount - paystackFee;
+        const netAmount = donation.netAmount ?? baseAmount + tipAmount;
 
         donationsList.push({
           donationId,
           donorName,
           donorEmail,
           orphanageName,
-          amount,
+          amount: baseAmount,
           netAmount,
           tipAmount,
           paystackFee,

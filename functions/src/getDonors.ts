@@ -11,6 +11,10 @@ interface RecurringPlanInfo {
   amount: number;
   interval: "daily" | "monthly" | "quarterly" | "yearly";
   nextChargeAt: string;
+  // Breakdown fields
+  baseAmount: number;
+  tipAmount: number;
+  transactionFee: number;
 }
 
 interface DonorListItem {
@@ -95,7 +99,7 @@ export const getDonors = onRequest(
           donationsSnapshot.docs.forEach((donationDoc) => {
             const donation = donationDoc.data();
             if (donation.status === "success") {
-              totalAmount += donation.amount ?? 0;
+              totalAmount += donation.baseAmount ?? 0;
               donationCount++;
               const createdAt = donation.createdAt?.toDate?.()?.toISOString?.();
               if (createdAt && (!lastDonationAt || createdAt > lastDonationAt)) {
@@ -117,10 +121,13 @@ export const getDonors = onRequest(
             const planData = recurringPlansSnapshot.docs[0].data();
             recurringPlan = {
               planCode: planData.planCode ?? "",
-              amount: planData.amount ?? 0,
+              amount: planData.grossAmount ?? 0,
               interval: planData.interval ?? "monthly",
               nextChargeAt:
                 planData.nextChargeAt?.toDate?.()?.toISOString?.() ?? "",
+              baseAmount: planData.baseAmount ?? 0,
+              tipAmount: planData.tipAmount ?? 0,
+              transactionFee: planData.paystackFeeEstimate ?? 0,
             };
           }
 
@@ -159,7 +166,7 @@ export const getDonors = onRequest(
               donationCount: 0,
               lastDonationAt: null,
             };
-            existing.totalAmount += donation.amount ?? 0;
+            existing.totalAmount += donation.baseAmount ?? 0;
             existing.donationCount++;
             const createdAt = donation.createdAt?.toDate?.()?.toISOString?.();
             if (
@@ -202,10 +209,13 @@ export const getDonors = onRequest(
             const planData = recurringPlansSnapshot.docs[0].data();
             recurringPlan = {
               planCode: planData.planCode ?? "",
-              amount: planData.amount ?? 0,
+              amount: planData.grossAmount ?? 0,
               interval: planData.interval ?? "monthly",
               nextChargeAt:
                 planData.nextChargeAt?.toDate?.()?.toISOString?.() ?? "",
+              baseAmount: planData.baseAmount ?? 0,
+              tipAmount: planData.tipAmount ?? 0,
+              transactionFee: planData.paystackFeeEstimate ?? 0,
             };
           }
 
