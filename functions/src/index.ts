@@ -22,3 +22,6 @@ export * from "./getRecurringPlans";
 export * from "./cancelRecurringDonation";
 export * from "./submitFeedback";
 export * from "./submitSupportTicket";
+export * from "./getDonorStats";
+export * from "./getDashboardStats";
+export * from "./updateLeaderboardCache";
