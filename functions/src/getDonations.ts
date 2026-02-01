@@ -1,0 +1,215 @@
+// functions/src/getDonations.ts
+import { onRequest } from "firebase-functions/v2/https";
+import * as logger from "firebase-functions/logger";
+import { db } from "./lib/firebaseAdmin";
+import { verifyAuth } from "./lib/authUtils";
+import { handleCors } from "./lib/corsUtils";
+import { allowedOrigins } from "./config/constants";
+
+type DonationStatus = "pending" | "success" | "failed";
+
+interface DonationListItem {
+  donationId: string;
+  donorName: string;
+  donorEmail: string;
+  orphanageName?: string;
+  amount: number;
+  netAmount: number;
+  tipAmount: number;
+  paystackFee: number;
+  status: DonationStatus;
+  recurring: boolean;
+  createdAt: string;
+}
+
+interface DonationsListResponse {
+  donations: DonationListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export const getDonations = onRequest(
+  { region: "europe-west1" },
+  async (req, res) => {
+    if (handleCors(req, res, allowedOrigins)) return;
+
+    try {
+      // Auth check - must be superAdmin or orphanageAdmin
+      let isSuperAdmin = false;
+      let orphanageId: string | null = null;
+
+      try {
+        const decoded = await verifyAuth(req, {
+          requiredRoles: ["superAdmin", "orphanageAdmin"],
+        });
+
+        isSuperAdmin = !!decoded.superAdmin;
+        orphanageId = decoded.orphanageId as string | null;
+
+        logger.info(
+          `getDonations triggered by ${decoded.uid}, superAdmin=${isSuperAdmin}, orphanageId=${orphanageId}`
+        );
+      } catch (err: any) {
+        logger.error("Auth error", err);
+        res.status(err.code || 401).send(err.message || "Unauthorized");
+        return;
+      }
+
+      const {
+        page = 1,
+        pageSize = 10,
+        search = "",
+        status: statusFilter = "all",
+        startDate: startDateStr,
+        endDate: endDateStr,
+      } = req.body;
+
+      const searchLower = search.toLowerCase();
+      const startDate = startDateStr ? new Date(startDateStr) : null;
+      const endDate = endDateStr ? new Date(endDateStr) : null;
+
+      // Build query
+      let donationsQuery: FirebaseFirestore.Query = db.collection("donations");
+
+      // Filter by orphanageId for orphanage admins
+      if (!isSuperAdmin && orphanageId) {
+        donationsQuery = donationsQuery.where("orphanageId", "==", orphanageId);
+      }
+
+      const donationsSnapshot = await donationsQuery.get();
+
+      // Cache for donor and orphanage data to reduce reads
+      const donorCache = new Map<string, { name: string; email: string }>();
+      const orphanageCache = new Map<string, string>();
+
+      const donationsList: DonationListItem[] = [];
+
+      for (const doc of donationsSnapshot.docs) {
+        const donation = doc.data();
+        const donationId = doc.id;
+
+        // Apply status filter
+        const donationStatus = donation.status as DonationStatus;
+        if (statusFilter !== "all" && donationStatus !== statusFilter) {
+          continue;
+        }
+
+        // Apply date range filter
+        const createdAt = donation.createdAt?.toDate?.();
+        if (createdAt) {
+          if (startDate && createdAt < startDate) {
+            continue;
+          }
+          if (endDate) {
+            const endOfDay = new Date(endDate);
+            endOfDay.setHours(23, 59, 59, 999);
+            if (createdAt > endOfDay) {
+              continue;
+            }
+          }
+        }
+
+        // Get donor info
+        const donorUid = donation.donorUid as string;
+        let donorName = "";
+        let donorEmail = "";
+
+        if (donorUid) {
+          if (donorCache.has(donorUid)) {
+            const cached = donorCache.get(donorUid)!;
+            donorName = cached.name;
+            donorEmail = cached.email;
+          } else {
+            const donorDoc = await db.collection("donors").doc(donorUid).get();
+            const donorData = donorDoc.data();
+            donorName = donorData?.name ?? "";
+            donorEmail = donorData?.email ?? "";
+            donorCache.set(donorUid, { name: donorName, email: donorEmail });
+          }
+        }
+
+        // Apply search filter
+        if (
+          searchLower &&
+          !donorName.toLowerCase().includes(searchLower) &&
+          !donorEmail.toLowerCase().includes(searchLower)
+        ) {
+          continue;
+        }
+
+        // Get orphanage name for super admin
+        let orphanageName: string | undefined;
+        if (isSuperAdmin && donation.orphanageId) {
+          const donationOrphanageId = donation.orphanageId as string;
+          if (orphanageCache.has(donationOrphanageId)) {
+            orphanageName = orphanageCache.get(donationOrphanageId);
+          } else {
+            const orphanageDoc = await db
+              .collection("orphanages")
+              .doc(donationOrphanageId)
+              .get();
+            const orphanageData = orphanageDoc.data();
+            orphanageName = orphanageData?.name ?? "";
+            orphanageCache.set(donationOrphanageId, orphanageName!);
+          }
+        }
+
+        const amount = donation.amount ?? 0;
+        const tipAmount = donation.tipAmount ?? 0;
+        const paystackFee = donation.paystackFee ?? 0;
+        const netAmount =
+          donation.netAmount ?? amount - tipAmount - paystackFee;
+
+        donationsList.push({
+          donationId,
+          donorName,
+          donorEmail,
+          orphanageName,
+          amount,
+          netAmount,
+          tipAmount,
+          paystackFee,
+          status: donationStatus,
+          recurring: donation.recurring ?? false,
+          createdAt: createdAt?.toISOString?.() ?? "",
+        });
+      }
+
+      // Sort by createdAt descending (most recent first)
+      donationsList.sort((a, b) => {
+        if (!a.createdAt) return 1;
+        if (!b.createdAt) return -1;
+        return (
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+      });
+
+      // Apply pagination
+      const total = donationsList.length;
+      const totalPages = Math.ceil(total / pageSize);
+      const startIndex = (page - 1) * pageSize;
+      const paginatedDonations = donationsList.slice(
+        startIndex,
+        startIndex + pageSize
+      );
+
+      const response: DonationsListResponse = {
+        donations: paginatedDonations,
+        total,
+        page,
+        pageSize,
+        totalPages,
+      };
+
+      logger.info(
+        `Returning ${paginatedDonations.length} of ${total} donations`
+      );
+      res.json({ data: response });
+    } catch (error) {
+      logger.error("getDonations error", error);
+      res.status(500).send("Internal error");
+    }
+  }
+);

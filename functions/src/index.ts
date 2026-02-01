@@ -25,3 +25,5 @@ export * from "./submitSupportTicket";
 export * from "./getDonorStats";
 export * from "./getDashboardStats";
 export * from "./updateLeaderboardCache";
+export * from "./getDonors";
+export * from "./getDonations";
