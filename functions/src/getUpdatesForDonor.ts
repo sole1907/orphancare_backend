@@ -159,6 +159,14 @@ export const getUpdatesForDonor = onRequest(
         `Returning ${paginatedUpdates.length} updates, hasMore: ${hasMore}`
       );
 
+      // Update lastUpdatesViewedAt on first page load (not pagination)
+      if (!lastUpdateId) {
+        await db.collection("donors").doc(donorUid).update({
+          lastUpdatesViewedAt: new Date(),
+        });
+        logger.info(`Updated lastUpdatesViewedAt for donor ${donorUid}`);
+      }
+
       res.json({
         updates: paginatedUpdates,
         hasMore,
