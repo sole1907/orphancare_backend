@@ -6,17 +6,6 @@ import { verifyAuth } from "./lib/authUtils";
 import { handleCors } from "./lib/corsUtils";
 import { allowedOrigins } from "./config/constants";
 
-interface RecurringPlanInfo {
-  planCode: string;
-  amount: number;
-  interval: "daily" | "monthly" | "quarterly" | "yearly";
-  nextChargeAt: string;
-  // Breakdown fields
-  baseAmount: number;
-  tipAmount: number;
-  transactionFee: number;
-}
-
 interface DonorListItem {
   donorUid: string;
   name: string;
@@ -24,7 +13,6 @@ interface DonorListItem {
   totalAmount: number;
   donationCount: number;
   lastDonationAt: string | null;
-  recurringPlan: RecurringPlanInfo | null;
 }
 
 interface DonorsListResponse {
@@ -108,29 +96,6 @@ export const getDonors = onRequest(
             }
           });
 
-          // Get active recurring plan
-          const recurringPlansSnapshot = await db
-            .collection("recurringPlans")
-            .where("donorUid", "==", donorUid)
-            .where("status", "==", "active")
-            .limit(1)
-            .get();
-
-          let recurringPlan: RecurringPlanInfo | null = null;
-          if (!recurringPlansSnapshot.empty) {
-            const planData = recurringPlansSnapshot.docs[0].data();
-            recurringPlan = {
-              planCode: planData.planCode ?? "",
-              amount: planData.grossAmount ?? 0,
-              interval: planData.interval ?? "monthly",
-              nextChargeAt:
-                planData.nextChargeAt?.toDate?.()?.toISOString?.() ?? "",
-              baseAmount: planData.baseAmount ?? 0,
-              tipAmount: planData.tipAmount ?? 0,
-              transactionFee: planData.paystackFeeEstimate ?? 0,
-            };
-          }
-
           donorsList.push({
             donorUid,
             name,
@@ -138,7 +103,6 @@ export const getDonors = onRequest(
             totalAmount,
             donationCount,
             lastDonationAt,
-            recurringPlan,
           });
         }
       } else if (orphanageId) {
@@ -195,30 +159,6 @@ export const getDonors = onRequest(
             continue;
           }
 
-          // Get active recurring plan for this orphanage
-          const recurringPlansSnapshot = await db
-            .collection("recurringPlans")
-            .where("donorUid", "==", donorUid)
-            .where("orphanageId", "==", orphanageId)
-            .where("status", "==", "active")
-            .limit(1)
-            .get();
-
-          let recurringPlan: RecurringPlanInfo | null = null;
-          if (!recurringPlansSnapshot.empty) {
-            const planData = recurringPlansSnapshot.docs[0].data();
-            recurringPlan = {
-              planCode: planData.planCode ?? "",
-              amount: planData.grossAmount ?? 0,
-              interval: planData.interval ?? "monthly",
-              nextChargeAt:
-                planData.nextChargeAt?.toDate?.()?.toISOString?.() ?? "",
-              baseAmount: planData.baseAmount ?? 0,
-              tipAmount: planData.tipAmount ?? 0,
-              transactionFee: planData.paystackFeeEstimate ?? 0,
-            };
-          }
-
           donorsList.push({
             donorUid,
             name,
@@ -226,7 +166,6 @@ export const getDonors = onRequest(
             totalAmount: stats.totalAmount,
             donationCount: stats.donationCount,
             lastDonationAt: stats.lastDonationAt,
-            recurringPlan,
           });
         }
       }
