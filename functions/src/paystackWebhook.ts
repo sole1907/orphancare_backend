@@ -5,6 +5,7 @@ import { db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
 import * as crypto from "crypto";
 import { computeNextChargeAt } from "./lib/chargeAuthorization";
+import { FieldValue } from "firebase-admin/firestore";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
@@ -69,9 +70,25 @@ export const paystackWebhook = onRequest(
           );
         }
 
-        snapshot.forEach((doc) => {
-          doc.ref.update({ status: "success", updatedAt: new Date() });
-        });
+        // Update donation status and donor lifetime donations
+        for (const doc of snapshot.docs) {
+          const donationData = doc.data();
+          await doc.ref.update({ status: "success", updatedAt: new Date() });
+
+          // Increment donor's lifetime donations
+          if (donationData.donorUid) {
+            const donorRef = db.collection("donors").doc(donationData.donorUid);
+            const amount = donationData.baseAmount || donationData.amount || 0;
+            await donorRef.update({
+              lifetimeDonations: FieldValue.increment(amount),
+              lifetimeDonationCount: FieldValue.increment(1),
+              lastDonationAt: new Date(),
+            });
+            logger.info(
+              `Updated lifetimeDonations for donor ${donationData.donorUid} by ${amount}`
+            );
+          }
+        }
 
         res.status(200).send("One-off success processed");
         return;
@@ -203,6 +220,20 @@ async function handleRecurringChargeSuccess(event: any) {
   logger.info(
     `Recurring donation logged: donationId=${donationRef.id}, planCode=${plan.planCode}`
   );
+
+  // 3b. Update donor's lifetime donations
+  if (donorUid) {
+    const donorRef = db.collection("donors").doc(donorUid);
+    const amount = plan.baseAmount || grossAmount || 0;
+    await donorRef.update({
+      lifetimeDonations: FieldValue.increment(amount),
+      lifetimeDonationCount: FieldValue.increment(1),
+      lastDonationAt: new Date(),
+    });
+    logger.info(
+      `Updated lifetimeDonations for donor ${donorUid} by ${amount} (recurring)`
+    );
+  }
 
   // 4. Create payout ledger entry
   await db.collection("payoutLedger").add({
