@@ -47,7 +47,7 @@ export const paystackWebhook = onRequest(
       // ---------------------------------------------------------
       // RECURRING via Charge Authorization (charge.success + metadata.recurring)
       // ---------------------------------------------------------
-      if (event.event === "charge.success" && event.data.metadata?.recurring) {
+      if (event.event === "charge.success" && event.data.metadata?.recurring === true) {
         await handleRecurringChargeSuccess(event);
         res.status(200).send("Recurring donation processed");
         // sendTransacEmail({ ... "Thank you for your recurring donation" ... })
