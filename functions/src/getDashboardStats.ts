@@ -37,6 +37,7 @@ interface DashboardStatsResponse {
   totalPayments: number;
   activeRecurringPlans: number;
   mrr: number;
+  monthlyRecurringTip: number;
   periodStart: string;
   periodEnd: string;
   paymentsOverTime: PaymentTimePoint[];
@@ -193,31 +194,37 @@ export const getDashboardStats = onRequest(
 
       const recurringSnapshot = await recurringQuery.get();
       let mrr = 0;
+      let monthlyRecurringTip = 0;
 
       recurringSnapshot.docs.forEach((doc) => {
         const data = doc.data();
-        const amount = data.baseAmount || data.grossAmount || 0;
+        const baseAmount = data.baseAmount || 0;
+        const tipAmount = data.tipAmount || 0;
         const interval = data.interval?.toLowerCase() || "monthly";
 
         // Convert to monthly equivalent
+        let multiplier = 1;
         switch (interval) {
           case "daily":
-            mrr += amount * 30;
+            multiplier = 30;
             break;
           case "weekly":
-            mrr += amount * 4;
+            multiplier = 4;
             break;
           case "quarterly":
-            mrr += amount / 3;
+            multiplier = 1 / 3;
             break;
           case "yearly":
-            mrr += amount / 12;
+            multiplier = 1 / 12;
             break;
           case "monthly":
           default:
-            mrr += amount;
+            multiplier = 1;
             break;
         }
+
+        mrr += baseAmount * multiplier;
+        monthlyRecurringTip += tipAmount * multiplier;
       });
 
       // 3. Get donor names for top donors
@@ -314,6 +321,7 @@ export const getDashboardStats = onRequest(
         totalPayments: donationsSnapshot.size,
         activeRecurringPlans: recurringSnapshot.size,
         mrr: Math.round(mrr),
+        monthlyRecurringTip: Math.round(monthlyRecurringTip),
         periodStart: formatDate(startDate),
         periodEnd: formatDate(endDate),
         paymentsOverTime,
