@@ -119,6 +119,53 @@ interface CreateRecurringPlanIntentParams {
   donorEmail: string;
 }
 
+/**
+ * Marks existing pending donations as "abandoned" for the same donor/child/orphanage.
+ * This prevents duplicate entries if the frontend sends multiple initiation requests.
+ */
+export async function abandonExistingPendingDonations(
+  donorUid: string,
+  childId: string,
+  orphanageId: string,
+  recurring: boolean,
+  baseAmount: number
+): Promise<number> {
+  logger.info(
+    `Checking for existing pending donations: donorUid=${donorUid}, childId=${childId}, orphanageId=${orphanageId}, recurring=${recurring}, baseAmount=${baseAmount}`
+  );
+
+  const pendingDonations = await db
+    .collection("donations")
+    .where("donorUid", "==", donorUid)
+    .where("childId", "==", childId)
+    .where("orphanageId", "==", orphanageId)
+    .where("recurring", "==", recurring)
+    .where("baseAmount", "==", baseAmount)
+    .where("status", "==", "pending")
+    .get();
+
+  if (pendingDonations.empty) {
+    logger.info("No existing pending donations found");
+    return 0;
+  }
+
+  const batch = db.batch();
+  pendingDonations.docs.forEach((doc) => {
+    batch.update(doc.ref, {
+      status: "abandoned",
+      abandonedAt: new Date(),
+      abandonReason: "superseded_by_new_initiation",
+    });
+  });
+
+  await batch.commit();
+  logger.info(
+    `Marked ${pendingDonations.size} existing pending donation(s) as abandoned`
+  );
+
+  return pendingDonations.size;
+}
+
 export async function createRecurringPlanIntent(
   params: CreateRecurringPlanIntentParams
 ): Promise<string> {

@@ -12,6 +12,7 @@ import {
   computeDonationAmounts,
   logDonationIntent,
   createRecurringPlanIntent,
+  abandonExistingPendingDonations,
 } from "./lib/donationUtils";
 import { allowedOrigins } from "./config/constants";
 
@@ -101,7 +102,16 @@ export const initiateDonation = onRequest(
 
         const subaccountCode = orphanageData.subaccountCode;
 
-        // 2. Compute amounts
+        // 2. Abandon any existing pending donations for same donor/child/orphanage/amount
+        await abandonExistingPendingDonations(
+          donorUid,
+          childId,
+          orphanageId,
+          false,
+          baseAmount
+        );
+
+        // 3. Compute amounts
         const tipAmount = Math.round(baseAmount * tipPercent);
         const netAmount = baseAmount + tipAmount;
         const grossAmount = computeGrossAmount(netAmount, config);
@@ -113,7 +123,7 @@ export const initiateDonation = onRequest(
           `One-off donation breakdown: base=${baseAmount}, tip=${tipAmount}, net=${netAmount}, fee=${paystackFee}, gross=${grossAmount}`
         );
 
-        // 3. Initialize Paystack transaction
+        // 4. Initialize Paystack transaction
         const initData = await initPaystackTransaction({
           email: donorEmail,
           amount: grossAmount * 100,
@@ -136,7 +146,7 @@ export const initiateDonation = onRequest(
           transactionCharge: platformAmount,
         });
 
-        // 4. Log donation intent
+        // 5. Log donation intent
         await logDonationIntent({
           donorUid,
           donorEmail,
@@ -209,7 +219,16 @@ export const initiateDonation = onRequest(
 
       const subaccountCodeRecurring = orphanageDataRecurring.subaccountCode;
 
-      // 2. Compute amounts
+      // 2. Abandon any existing pending donations for same donor/child/orphanage/amount
+      await abandonExistingPendingDonations(
+        donorUid,
+        childId,
+        orphanageId,
+        true,
+        baseAmount
+      );
+
+      // 3. Compute amounts
       const tipAmount = Math.round(baseAmount * tipPercent);
       const netAmount = baseAmount + tipAmount;
       const grossAmount = computeGrossAmount(netAmount, config);
@@ -221,7 +240,7 @@ export const initiateDonation = onRequest(
         `Recurring donation breakdown: base=${baseAmount}, tip=${tipAmount}, net=${netAmount}, gross=${grossAmount}, feeEstimate=${paystackFeeEstimate}`
       );
 
-      // 3. Create recurring plan FIRST (so we have planCode for metadata)
+      // 4. Create recurring plan FIRST (so we have planCode for metadata)
       const planCode = await createRecurringPlanIntent({
         donorUid,
         childId,
@@ -240,7 +259,7 @@ export const initiateDonation = onRequest(
 
       logger.info(`Recurring plan created: planCode=${planCode}`);
 
-      // 4. Initialize FIRST PAYMENT with split (capture authorization_code via webhook)
+      // 5. Initialize FIRST PAYMENT with split (capture authorization_code via webhook)
       const initData = await initPaystackTransaction({
         email: donorEmail,
         amount: grossAmount * 100,
@@ -263,7 +282,7 @@ export const initiateDonation = onRequest(
         `Redirecting donor to Paystack. planCode=${planCode}, ref=${initData.reference}`
       );
 
-      // 5. Return checkout URL + planCode
+      // 6. Return checkout URL + planCode
       res.json({
         checkoutUrl: initData.authorization_url,
         planCode,
