@@ -1,6 +1,7 @@
 // functions/src/lib/chargeAuthorization.ts
 import fetch from "node-fetch";
 import * as logger from "firebase-functions/logger";
+import { decryptPII, EncryptedField } from "./encryption";
 
 interface ChargePlanParams {
   planDocRef: FirebaseFirestore.DocumentReference;
@@ -17,13 +18,18 @@ export async function chargeAuthorizationForPlan({
   secret,
   subaccountCode,
 }: ChargePlanParams) {
-  const { authorizationCode, customerEmail, grossAmount, interval, planCode } =
+  const { authorizationCode_encrypted, customerEmail, grossAmount, interval, planCode } =
     plan;
 
-  if (!authorizationCode) {
-    logger.error(`Plan ${planCode} has no authorizationCode`);
+  if (!authorizationCode_encrypted) {
+    logger.error(`Plan ${planCode} has no authorizationCode_encrypted`);
     return;
   }
+
+  // Decrypt the authorization code
+  const authorizationCode = await decryptPII(
+    authorizationCode_encrypted as EncryptedField
+  );
 
   const body = {
     email: customerEmail,

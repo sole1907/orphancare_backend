@@ -5,6 +5,7 @@ import { verifyAuth } from "./lib/authUtils";
 import { encrypt } from "./lib/encryption";
 import { handleCors } from "./lib/corsUtils";
 import { allowedOrigins } from "./config/constants";
+import { auditLogger, AuditAction, ResourceType } from "./lib/auditLogger";
 
 export const submitAccountDetails = onRequest(
   { region: "europe-west1" },
@@ -48,8 +49,24 @@ export const submitAccountDetails = onRequest(
         updatedAt: new Date(),
       });
 
+      // Audit log - successful submission
+      await auditLogger.logWithRequest({
+        request: req,
+        auth: decoded,
+        action: AuditAction.SUBMIT_BANK_ACCOUNT,
+        resourceType: ResourceType.ORPHANAGE,
+        resourceId: orphanageId,
+        details: {
+          bankName,
+          bankCode,
+          accountName,
+          accountNumberLast4: last4,
+        },
+        success: true,
+      });
+
       res.json({ success: true });
-    } catch (err) {
+    } catch (err: any) {
       logger.error("submitAccountDetails error", err);
       res.status(500).json({ error: "Internal error" });
     }

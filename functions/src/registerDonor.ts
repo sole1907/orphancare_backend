@@ -5,11 +5,19 @@ import Brevo from "sib-api-v3-sdk";
 import { defineSecret } from "firebase-functions/params";
 import { handleCors } from "./lib/corsUtils";
 import { allowedOrigins } from "./config/constants";
+import {
+  encryptPII,
+  createBlindIndex,
+  encryptDeterministic,
+  PIIFieldType,
+} from "./lib/encryption";
 
 const brevoApiKey = defineSecret("BREVO_API_KEY");
+const devEncryptionKey = defineSecret("DEV_ENCRYPTION_KEY");
+const blindIndexSalt = defineSecret("BLIND_INDEX_SALT");
 
 export const registerDonor = onRequest(
-  { region: "europe-west1", secrets: [brevoApiKey] },
+  { region: "europe-west1", secrets: [brevoApiKey, devEncryptionKey, blindIndexSalt] },
   async (req, res) => {
     logger.info("Incoming headers:\n" + JSON.stringify(req.headers, null, 2));
 
@@ -51,11 +59,23 @@ export const registerDonor = onRequest(
       // Assign donor claim
       await auth.setCustomUserClaims(user.uid, { donor: true });
 
-      // Build donor record
+      // Encrypt PII fields
+      const [nameEncrypted, emailEncrypted, phoneEncrypted] = await Promise.all([
+        name ? encryptPII(name, PIIFieldType.NAME) : null,
+        encryptPII(email, PIIFieldType.EMAIL),
+        phone ? encryptPII(phone, PIIFieldType.PHONE) : null,
+      ]);
+
+      // Build donor record with encrypted PII
       const donorData: any = {
-        name,
-        email,
-        phone,
+        // Encrypted fields
+        name_encrypted: nameEncrypted,
+        email_encrypted: emailEncrypted,
+        phone_encrypted: phoneEncrypted,
+        // Blind indexes for searching
+        email_blind_index: createBlindIndex(email),
+        phone_deterministic: phone ? encryptDeterministic(phone) : null,
+        // Non-PII fields stored as-is
         country,
         status: "inactive",
         createdAt: new Date(),

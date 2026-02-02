@@ -7,6 +7,7 @@ import { verifyAuth } from "./lib/authUtils";
 import { decrypt } from "./lib/encryption";
 import { handleCors } from "./lib/corsUtils";
 import { allowedOrigins } from "./config/constants";
+import { auditLogger, AuditAction, ResourceType } from "./lib/auditLogger";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
@@ -113,9 +114,45 @@ export const approveOrphanageAccount = onRequest(
         updatedAt: new Date(),
       });
 
+      // Audit log - successful approval
+      await auditLogger.logWithRequest({
+        request: req,
+        auth: decoded,
+        action: AuditAction.APPROVE_BANK_ACCOUNT,
+        resourceType: ResourceType.ORPHANAGE,
+        resourceId: orphanageId,
+        details: {
+          orphanageName: data.name,
+          bankCode: data.bankCode,
+          subaccountCode,
+        },
+        success: true,
+      });
+
       res.json({ success: true, subaccountCode });
-    } catch (err) {
+    } catch (err: any) {
       logger.error("Approval error", err);
+
+      // Audit log - failed approval (if we have auth context)
+      const orphanageId = req.body?.orphanageId;
+      if (orphanageId) {
+        try {
+          const decoded = await verifyAuth(req, { requiredRoles: ["superAdmin"] });
+          await auditLogger.logWithRequest({
+            request: req,
+            auth: decoded,
+            action: AuditAction.APPROVE_BANK_ACCOUNT,
+            resourceType: ResourceType.ORPHANAGE,
+            resourceId: orphanageId,
+            details: { orphanageId },
+            success: false,
+            errorMessage: err.message || "Internal error",
+          });
+        } catch {
+          // Auth failed, can't log with auth context
+        }
+      }
+
       res.status(500).json({ error: "Internal error" });
     }
   }

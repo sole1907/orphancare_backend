@@ -7,13 +7,18 @@ import { defineSecret } from "firebase-functions/params";
 import { chargeAuthorizationForPlan } from "./lib/chargeAuthorization";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
+// Include DEV_ENCRYPTION_KEY in this function's `secrets` so encryption helpers
+// (e.g. `decryptPII`) that rely on this secret via `defineSecret`
+// can access it at runtime. It's used indirectly by
+// `chargeAuthorizationForPlan` when decrypting stored authorization codes.
+const devEncryptionKey = defineSecret("DEV_ENCRYPTION_KEY");
 
 export const chargeRecurringDonations = onSchedule(
   {
     schedule: "every day 02:00",
     timeZone: "Africa/Lagos",
     region: "europe-west1",
-    secrets: [paystackSecret],
+    secrets: [paystackSecret, devEncryptionKey],
   },
   async () => {
     const now = new Date();

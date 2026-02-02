@@ -6,11 +6,13 @@ import { defineSecret } from "firebase-functions/params";
 import * as crypto from "crypto";
 import { computeNextChargeAt } from "./lib/chargeAuthorization";
 import { FieldValue } from "firebase-admin/firestore";
+import { encryptPII, PIIFieldType } from "./lib/encryption";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
+const devEncryptionKey = defineSecret("DEV_ENCRYPTION_KEY");
 
 export const paystackWebhook = onRequest(
-  { region: "europe-west1", secrets: [paystackSecret] },
+  { region: "europe-west1", secrets: [paystackSecret, devEncryptionKey] },
   async (req, res) => {
     try {
       const forwardedFor = req.headers["x-forwarded-for"];
@@ -169,10 +171,10 @@ async function handleRecurringChargeSuccess(event: any) {
   const authorizationCode = data.authorization.authorization_code;
   const isReusable = data.authorization.reusable === true;
 
-  if (!plan.authorizationCode) {
+  if (!plan.authorizationCode_encrypted) {
     if (!isReusable) {
       logger.error(
-        `Authorization ${authorizationCode} is not reusable. Cannot use for recurring. planCode=${plan.planCode}`
+        `Authorization is not reusable. Cannot use for recurring. planCode=${plan.planCode}`
       );
       await planDoc.ref.update({
         status: "failed",
@@ -183,8 +185,14 @@ async function handleRecurringChargeSuccess(event: any) {
 
     const nextChargeAt = computeNextChargeAt(new Date(), plan.interval);
 
-    await planDoc.ref.update({
+    // Encrypt the authorization code before storing
+    const authCodeEncrypted = await encryptPII(
       authorizationCode,
+      PIIFieldType.AUTHORIZATION_CODE
+    );
+
+    await planDoc.ref.update({
+      authorizationCode_encrypted: authCodeEncrypted,
       status: "active",
       activatedAt: new Date(),
       nextChargeAt,

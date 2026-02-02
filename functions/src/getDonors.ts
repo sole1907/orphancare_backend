@@ -5,6 +5,11 @@ import { db } from "./lib/firebaseAdmin";
 import { verifyAuth } from "./lib/authUtils";
 import { handleCors } from "./lib/corsUtils";
 import { allowedOrigins } from "./config/constants";
+import { decryptPII, createBlindIndex, EncryptedField } from "./lib/encryption";
+import { defineSecret } from "firebase-functions/params";
+
+const devEncryptionKey = defineSecret("DEV_ENCRYPTION_KEY");
+const blindIndexSalt = defineSecret("BLIND_INDEX_SALT");
 
 interface DonorListItem {
   donorUid: string;
@@ -23,8 +28,76 @@ interface DonorsListResponse {
   totalPages: number;
 }
 
+/**
+ * Extract donor PII fields, handling both encrypted and plaintext formats
+ * Supports migration period where some donors have encrypted data and others don't
+ */
+async function extractDonorPII(
+  donorData: any
+): Promise<{ name: string; email: string }> {
+  let name = "";
+  let email = "";
+
+  // Try encrypted fields first, fall back to plaintext
+  if (donorData.name_encrypted) {
+    try {
+      name = await decryptPII(donorData.name_encrypted as EncryptedField);
+    } catch {
+      name = donorData.name ?? "";
+    }
+  } else {
+    name = donorData.name ?? "";
+  }
+
+  if (donorData.email_encrypted) {
+    try {
+      email = await decryptPII(donorData.email_encrypted as EncryptedField);
+    } catch {
+      email = donorData.email ?? "";
+    }
+  } else {
+    email = donorData.email ?? "";
+  }
+
+  return { name, email };
+}
+
+/**
+ * Check if donor matches search term
+ * Uses blind index for encrypted emails, plaintext comparison for legacy data
+ */
+function matchesSearch(
+  donorData: any,
+  name: string,
+  email: string,
+  searchLower: string
+): boolean {
+  if (!searchLower) return true;
+
+  // Check name match (case-insensitive)
+  if (name.toLowerCase().includes(searchLower)) {
+    return true;
+  }
+
+  // Check email match
+  // For encrypted emails, we can use blind index for exact match
+  if (donorData.email_blind_index) {
+    const searchBlindIndex = createBlindIndex(searchLower);
+    if (donorData.email_blind_index === searchBlindIndex) {
+      return true;
+    }
+  }
+
+  // Also check plaintext email (for legacy data or partial matches)
+  if (email.toLowerCase().includes(searchLower)) {
+    return true;
+  }
+
+  return false;
+}
+
 export const getDonors = onRequest(
-  { region: "europe-west1" },
+  { region: "europe-west1", secrets: [devEncryptionKey, blindIndexSalt] },
   async (req, res) => {
     if (handleCors(req, res, allowedOrigins)) return;
 
@@ -62,15 +135,12 @@ export const getDonors = onRequest(
         for (const doc of donorsSnapshot.docs) {
           const donorData = doc.data();
           const donorUid = doc.id;
-          const name = donorData.name ?? "";
-          const email = donorData.email ?? "";
 
-          // Apply search filter
-          if (
-            searchLower &&
-            !name.toLowerCase().includes(searchLower) &&
-            !email.toLowerCase().includes(searchLower)
-          ) {
+          // Extract PII (handles both encrypted and plaintext formats)
+          const { name, email } = await extractDonorPII(donorData);
+
+          // Apply search filter (uses blind index for encrypted emails)
+          if (!matchesSearch(donorData, name, email, searchLower)) {
             continue;
           }
 
@@ -147,15 +217,12 @@ export const getDonors = onRequest(
         for (const [donorUid, stats] of donorMap) {
           const donorDoc = await db.collection("donors").doc(donorUid).get();
           const donorData = donorDoc.data() ?? {};
-          const name = donorData.name ?? "";
-          const email = donorData.email ?? "";
 
-          // Apply search filter
-          if (
-            searchLower &&
-            !name.toLowerCase().includes(searchLower) &&
-            !email.toLowerCase().includes(searchLower)
-          ) {
+          // Extract PII (handles both encrypted and plaintext formats)
+          const { name, email } = await extractDonorPII(donorData);
+
+          // Apply search filter (uses blind index for encrypted emails)
+          if (!matchesSearch(donorData, name, email, searchLower)) {
             continue;
           }
 

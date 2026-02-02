@@ -3,14 +3,16 @@ import * as logger from "firebase-functions/logger";
 import { auth, db } from "./lib/firebaseAdmin";
 import Brevo from "sib-api-v3-sdk";
 import { defineSecret } from "firebase-functions/params";
+import { hashOTP } from "./lib/encryption";
 
 const brevoApiKey = defineSecret("BREVO_API_KEY");
+const devEncryptionKey = defineSecret("DEV_ENCRYPTION_KEY");
 
 export const notifyAccountStatusChange = onDocumentWritten(
   {
     region: "europe-west1",
     document: "orphanages/{orphanageId}",
-    secrets: [brevoApiKey],
+    secrets: [brevoApiKey, devEncryptionKey],
   },
   async (event) => {
     const before = event.data?.before?.data() as any | undefined;
@@ -66,8 +68,11 @@ export const notifyAccountStatusChange = onDocumentWritten(
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       const expiresAt = Date.now() + 5 * 60 * 1000;
 
+      // Hash OTP before storing (more secure than plaintext)
+      const otpHash = hashOTP(otp);
+
       await db.collection("orphanages").doc(orphanageId).update({
-        accountOtp: otp,
+        accountOtpHash: otpHash,
         accountOtpExpires: expiresAt,
       });
 

@@ -4,9 +4,13 @@ import { db } from "./lib/firebaseAdmin";
 import { verifyAuth } from "./lib/authUtils";
 import { handleCors } from "./lib/corsUtils";
 import { allowedOrigins } from "./config/constants";
+import { verifyOTP } from "./lib/encryption";
+import { defineSecret } from "firebase-functions/params";
+
+const devEncryptionKey = defineSecret("DEV_ENCRYPTION_KEY");
 
 export const verifyAccountOtp = onRequest(
-  { region: "europe-west1" },
+  { region: "europe-west1", secrets: [devEncryptionKey] },
   async (req, res) => {
     logger.info("Incoming headers:\n" + JSON.stringify(req.headers, null, 2));
 
@@ -52,7 +56,7 @@ export const verifyAccountOtp = onRequest(
 
       const data = snap.data() as any;
 
-      if (!data.accountOtp || !data.accountOtpExpires) {
+      if (!data.accountOtpHash || !data.accountOtpExpires) {
         logger.error("No OTP found on orphanage doc");
         res.status(400).json({ error: "No OTP found. Please resend." });
         return;
@@ -66,7 +70,8 @@ export const verifyAccountOtp = onRequest(
         return;
       }
 
-      if (otp !== data.accountOtp) {
+      // Verify OTP using hash comparison
+      if (!verifyOTP(otp, data.accountOtpHash)) {
         logger.error("Invalid OTP");
         res.status(400).json({ error: "Invalid OTP" });
         return;
@@ -74,7 +79,7 @@ export const verifyAccountOtp = onRequest(
 
       // OTP valid → move to pending_admin_review
       await ref.update({
-        accountOtp: null,
+        accountOtpHash: null,
         accountOtpExpires: null,
         accountVerificationStatus: "pending",
       });
