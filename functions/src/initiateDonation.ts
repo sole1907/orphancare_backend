@@ -282,7 +282,26 @@ export const initiateDonation = onRequest(
         `Redirecting donor to Paystack. planCode=${planCode}, ref=${initData.reference}`
       );
 
-      // 6. Return checkout URL + planCode
+      // 6. Log donation intent (so checkDonationStatus can find it by paystackRef)
+      await logDonationIntent({
+        donorUid,
+        donorEmail,
+        childId,
+        orphanageId,
+        grossAmount,
+        baseAmount,
+        tipPercent,
+        tipAmount,
+        netAmount,
+        paystackFee: paystackFeeEstimate,
+        orphanageAmount,
+        platformAmount,
+        recurring: true,
+        interval,
+        paystackRef: initData.reference,
+      });
+
+      // 7. Return checkout URL + planCode
       res.json({
         checkoutUrl: initData.authorization_url,
         planCode,
