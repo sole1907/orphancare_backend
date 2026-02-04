@@ -4,15 +4,16 @@ import { db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
 import fetch from "node-fetch";
 import { verifyAuth } from "./lib/authUtils";
-import { decrypt } from "./lib/encryption";
+import { decrypt, encryptPII, PIIFieldType } from "./lib/encryption";
 import { handleCors } from "./lib/corsUtils";
 import { allowedOrigins } from "./config/constants";
 import { auditLogger, AuditAction, ResourceType } from "./lib/auditLogger";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
+const devEncryptionKey = defineSecret("DEV_ENCRYPTION_KEY");
 
 export const approveOrphanageAccount = onRequest(
-  { region: "europe-west1", secrets: [paystackSecret] },
+  { region: "europe-west1", secrets: [paystackSecret, devEncryptionKey] },
   async (req, res) => {
     logger.info("Incoming headers:\n" + JSON.stringify(req.headers, null, 2));
 
@@ -106,9 +107,15 @@ export const approveOrphanageAccount = onRequest(
         }
       }
 
-      // --- UPDATE FIRESTORE ---
-      await ref.update({
+      // --- ENCRYPT SUBACCOUNT CODE AND UPDATE FIRESTORE ---
+      const subaccountCodeEncrypted = await encryptPII(
         subaccountCode,
+        PIIFieldType.SUBACCOUNT_CODE
+      );
+
+      await ref.update({
+        subaccountCode_encrypted: subaccountCodeEncrypted,
+        subaccountCode: null, // Remove plain text
         accountVerificationStatus: "approved",
         accountNumberEncrypted: null, // remove sensitive data
         updatedAt: new Date(),

@@ -2,9 +2,9 @@
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import { db } from "./lib/firebaseAdmin";
-import fetch from "node-fetch";
 import { defineSecret } from "firebase-functions/params";
 import { chargeAuthorizationForPlan } from "./lib/chargeAuthorization";
+import { getSubaccountCode } from "./lib/paystackUtils";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 // Include DEV_ENCRYPTION_KEY in this function's `secrets` so encryption helpers
@@ -62,7 +62,8 @@ export const chargeRecurringDonations = onSchedule(
         .get();
       const orphanageData = orphanageDoc.data();
 
-      if (!orphanageData?.subaccountCode) {
+      const subaccountCode = await getSubaccountCode(orphanageData);
+      if (!subaccountCode) {
         logger.error(
           `Orphanage ${plan.orphanageId} has no subaccount. Skipping plan ${planCode}`
         );
@@ -78,7 +79,7 @@ export const chargeRecurringDonations = onSchedule(
           plan,
           PAYSTACK_URI,
           secret,
-          subaccountCode: orphanageData.subaccountCode,
+          subaccountCode,
         });
       } catch (err: any) {
         const currentRetries = plan.retryCount || 0;

@@ -14,6 +14,7 @@ export enum PIIFieldType {
   NAME = "name",
   AUTHORIZATION_CODE = "auth_code",
   BIRTHDAY = "birthday",
+  SUBACCOUNT_CODE = "subaccount_code",
 }
 
 // Structure for encrypted PII fields

@@ -1,3 +1,5 @@
+import { EncryptedField } from "../lib/encryption";
+
 export interface OrphanageData {
   name: string;
   bankName: string;
@@ -10,7 +12,8 @@ export interface OrphanageData {
     | "pending"
     | "approved"
     | "rejected";
-  subaccountCode?: string;
+  subaccountCode_encrypted?: EncryptedField;
+  subaccountCode?: string; // Legacy field for backward compatibility
   adminUid: string;
   // add any other fields you store in Firestore
 }

@@ -1,5 +1,6 @@
 import fetch from "node-fetch";
 import * as logger from "firebase-functions/logger";
+import { decryptPII, EncryptedField } from "./encryption";
 
 interface InitTransactionParams {
   email: string;
@@ -83,4 +84,21 @@ export async function initPaystackTransaction(
     authorization_url: data.data.authorization_url,
     reference: data.data.reference,
   };
+}
+
+/**
+ * Get subaccount code from orphanage data, supporting both encrypted and legacy plain text fields
+ */
+export async function getSubaccountCode(
+  orphanageData: any
+): Promise<string | null> {
+  // Prefer encrypted field
+  if (orphanageData.subaccountCode_encrypted) {
+    return decryptPII(orphanageData.subaccountCode_encrypted as EncryptedField);
+  }
+  // Fall back to legacy plain text (migration period)
+  if (orphanageData.subaccountCode) {
+    return orphanageData.subaccountCode;
+  }
+  return null;
 }

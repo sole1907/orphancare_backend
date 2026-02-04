@@ -3,6 +3,8 @@ import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
+import { handleCors } from "./lib/corsUtils";
+import { allowedOrigins } from "./config/constants";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 
@@ -78,6 +80,8 @@ async function checkPaystack(): Promise<HealthCheck> {
 export const healthCheck = onRequest(
   { region: "europe-west1", secrets: [paystackSecret] },
   async (req, res) => {
+    if (handleCors(req, res, allowedOrigins)) return;
+
     try {
       const [firestoreCheck, paystackCheck] = await Promise.all([
         checkFirestore(),
@@ -124,6 +128,8 @@ export const healthCheck = onRequest(
 export const healthCheckDeep = onRequest(
   { region: "europe-west1", secrets: [paystackSecret] },
   async (req, res) => {
+    if (handleCors(req, res, allowedOrigins)) return;
+
     // Check for admin header (simple protection)
     const adminKey = req.headers["x-admin-key"];
     if (adminKey !== process.env.ADMIN_HEALTH_KEY && process.env.ENV_TYPE === "production") {

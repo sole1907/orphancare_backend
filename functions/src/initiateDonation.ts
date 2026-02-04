@@ -7,7 +7,7 @@ import { OrphanageData } from "./types/orphanage";
 import { loadFeeConfig, computeGrossAmount } from "./lib/feeEngine";
 
 import { handleCors } from "./lib/corsUtils";
-import { initPaystackTransaction } from "./lib/paystackUtils";
+import { initPaystackTransaction, getSubaccountCode } from "./lib/paystackUtils";
 import {
   computeDonationAmounts,
   logDonationIntent,
@@ -17,9 +17,10 @@ import {
 import { allowedOrigins } from "./config/constants";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
+const devEncryptionKey = defineSecret("DEV_ENCRYPTION_KEY");
 
 export const initiateDonation = onRequest(
-  { region: "europe-west1", secrets: [paystackSecret] },
+  { region: "europe-west1", secrets: [paystackSecret, devEncryptionKey] },
   async (req, res) => {
     logger.info("initiateDonation: incoming headers", req.headers);
 
@@ -92,15 +93,14 @@ export const initiateDonation = onRequest(
         }
 
         const orphanageData = orphanageDoc.data() as OrphanageData;
-        if (!orphanageData.subaccountCode) {
+        const subaccountCode = await getSubaccountCode(orphanageData);
+        if (!subaccountCode) {
           logger.error(
             `Orphanage has no subaccount configured: ${orphanageId}`
           );
           res.status(400).send("Orphanage has no subaccount configured");
           return;
         }
-
-        const subaccountCode = orphanageData.subaccountCode;
 
         // 2. Abandon any existing pending donations for same donor/child/orphanage/amount
         await abandonExistingPendingDonations(
@@ -209,15 +209,14 @@ export const initiateDonation = onRequest(
       }
 
       const orphanageDataRecurring = orphanageDocRecurring.data() as OrphanageData;
-      if (!orphanageDataRecurring.subaccountCode) {
+      const subaccountCodeRecurring = await getSubaccountCode(orphanageDataRecurring);
+      if (!subaccountCodeRecurring) {
         logger.error(
           `Orphanage has no subaccount configured: ${orphanageId}`
         );
         res.status(400).send("Orphanage has no subaccount configured");
         return;
       }
-
-      const subaccountCodeRecurring = orphanageDataRecurring.subaccountCode;
 
       // 2. Abandon any existing pending donations for same donor/child/orphanage/amount
       await abandonExistingPendingDonations(
