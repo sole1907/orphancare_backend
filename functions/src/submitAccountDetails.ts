@@ -1,5 +1,6 @@
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
+import { defineSecret } from "firebase-functions/params";
 import { db } from "./lib/firebaseAdmin";
 import { verifyAuth } from "./lib/authUtils";
 import { encrypt } from "./lib/encryption";
@@ -7,8 +8,10 @@ import { handleCors } from "./lib/corsUtils";
 import { allowedOrigins } from "./config/constants";
 import { auditLogger, AuditAction, ResourceType } from "./lib/auditLogger";
 
+const devEncryptionKey = defineSecret("DEV_ENCRYPTION_KEY");
+
 export const submitAccountDetails = onRequest(
-  { region: "europe-west1" },
+  { region: "europe-west1", secrets: [devEncryptionKey] },
   async (req, res) => {
     logger.info("Incoming headers:\n" + JSON.stringify(req.headers, null, 2));
 
