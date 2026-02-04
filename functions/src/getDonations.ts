@@ -5,6 +5,10 @@ import { db } from "./lib/firebaseAdmin";
 import { verifyAuth } from "./lib/authUtils";
 import { handleCors } from "./lib/corsUtils";
 import { allowedOrigins } from "./config/constants";
+import { decryptPII, EncryptedField } from "./lib/encryption";
+import { defineSecret } from "firebase-functions/params";
+
+const devEncryptionKey = defineSecret("DEV_ENCRYPTION_KEY");
 
 type DonationStatus = "pending" | "success" | "failed";
 
@@ -30,8 +34,41 @@ interface DonationsListResponse {
   totalPages: number;
 }
 
+/**
+ * Extract donor PII fields, handling both encrypted and plaintext formats
+ */
+async function extractDonorPII(
+  donorData: any
+): Promise<{ name: string; email: string }> {
+  let name = "";
+  let email = "";
+
+  // Try encrypted fields first, fall back to plaintext
+  if (donorData.name_encrypted) {
+    try {
+      name = await decryptPII(donorData.name_encrypted as EncryptedField);
+    } catch {
+      name = donorData.name ?? "";
+    }
+  } else {
+    name = donorData.name ?? "";
+  }
+
+  if (donorData.email_encrypted) {
+    try {
+      email = await decryptPII(donorData.email_encrypted as EncryptedField);
+    } catch {
+      email = donorData.email ?? "";
+    }
+  } else {
+    email = donorData.email ?? "";
+  }
+
+  return { name, email };
+}
+
 export const getDonations = onRequest(
-  { region: "europe-west1" },
+  { region: "europe-west1", secrets: [devEncryptionKey] },
   async (req, res) => {
     if (handleCors(req, res, allowedOrigins)) return;
 
@@ -124,8 +161,11 @@ export const getDonations = onRequest(
           } else {
             const donorDoc = await db.collection("donors").doc(donorUid).get();
             const donorData = donorDoc.data();
-            donorName = donorData?.name ?? "";
-            donorEmail = donorData?.email ?? "";
+            if (donorData) {
+              const pii = await extractDonorPII(donorData);
+              donorName = pii.name;
+              donorEmail = pii.email;
+            }
             donorCache.set(donorUid, { name: donorName, email: donorEmail });
           }
         }
