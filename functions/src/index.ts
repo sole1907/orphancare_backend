@@ -27,6 +27,8 @@ export * from "./updateLeaderboardCache";
 export * from "./getDonors";
 export * from "./getDonorProfile";
 export * from "./updateDonorProfile";
+export * from "./saveChild";
+export * from "./getChildren";
 export * from "./getDonations";
 export * from "./getAuditLogs";
 export * from "./health";
