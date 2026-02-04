@@ -14,7 +14,7 @@ export function handleCors(
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, Origin, Accept"
+    "Content-Type, Authorization, Origin, Accept, x-admin-key"
   );
 
   if (req.method === "OPTIONS") {
