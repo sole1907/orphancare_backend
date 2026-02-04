@@ -42,6 +42,7 @@ __exportStar(require("./getDashboardStats"), exports);
 __exportStar(require("./updateLeaderboardCache"), exports);
 __exportStar(require("./getDonors"), exports);
 __exportStar(require("./getDonorProfile"), exports);
+__exportStar(require("./updateDonorProfile"), exports);
 __exportStar(require("./getDonations"), exports);
 __exportStar(require("./getAuditLogs"), exports);
 __exportStar(require("./health"), exports);
