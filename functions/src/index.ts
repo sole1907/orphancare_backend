@@ -28,3 +28,8 @@ export * from "./getDonors";
 export * from "./getDonations";
 export * from "./getAuditLogs";
 export * from "./health";
+export * from "./slaConfig";
+export * from "./slaHealthCheck";
+export * from "./updateSlaSummary";
+export * from "./getSlaMetrics";
+export * from "./cleanupHealthHistory";
