@@ -5,6 +5,10 @@ import { db } from "./lib/firebaseAdmin";
 import { verifyAuth } from "./lib/authUtils";
 import { handleCors } from "./lib/corsUtils";
 import { allowedOrigins } from "./config/constants";
+import { decryptPII, EncryptedField } from "./lib/encryption";
+import { defineSecret } from "firebase-functions/params";
+
+const devEncryptionKey = defineSecret("DEV_ENCRYPTION_KEY");
 
 interface PaymentTimePoint {
   date: string;
@@ -65,6 +69,24 @@ function formatDate(date: Date): string {
   return date.toISOString().split("T")[0]; // YYYY-MM-DD
 }
 
+/**
+ * Extract donor name, handling both encrypted and plaintext formats
+ */
+async function extractDonorName(donorData: any): Promise<string> {
+  if (!donorData) return "Anonymous";
+
+  // Try encrypted field first, fall back to plaintext
+  if (donorData.name_encrypted) {
+    try {
+      return await decryptPII(donorData.name_encrypted as EncryptedField);
+    } catch {
+      return donorData.name ?? "Anonymous";
+    }
+  }
+
+  return donorData.name ?? "Anonymous";
+}
+
 function groupByDate(
   items: Array<{ date: Date; amount: number }>,
   range: string
@@ -94,7 +116,7 @@ function groupByDate(
 }
 
 export const getDashboardStats = onRequest(
-  { region: "europe-west1" },
+  { region: "europe-west1", secrets: [devEncryptionKey] },
   async (req, res) => {
     if (handleCors(req, res, allowedOrigins)) return;
 
@@ -239,12 +261,14 @@ export const getDashboardStats = onRequest(
       if (donorIds.length > 0) {
         const donorRefs = donorIds.map((id) => db.collection("donors").doc(id));
         const donorDocs = await db.getAll(...donorRefs);
-        donorDocs.forEach((doc) => {
+
+        for (const doc of donorDocs) {
           if (doc.exists) {
             const data = doc.data();
-            donorNames.set(doc.id, data?.name || "Anonymous");
+            const name = await extractDonorName(data);
+            donorNames.set(doc.id, name);
           }
-        });
+        }
       }
 
       const topDonors: TopDonor[] = sortedDonors.map((d) => ({
