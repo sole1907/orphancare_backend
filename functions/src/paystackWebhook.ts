@@ -20,8 +20,8 @@ export const paystackWebhook = onRequest(
         typeof forwardedFor === "string"
           ? forwardedFor.split(",")[0].trim()
           : Array.isArray(forwardedFor)
-          ? forwardedFor[0].trim()
-          : undefined;
+            ? forwardedFor[0].trim()
+            : undefined;
       const allowedIps = ["52.31.139.75", "52.49.173.169", "52.214.14.220"];
 
       if (!ip || !allowedIps.includes(ip)) {
@@ -49,7 +49,9 @@ export const paystackWebhook = onRequest(
       // ---------------------------------------------------------
       // RECURRING via Charge Authorization (charge.success + metadata.recurring)
       // ---------------------------------------------------------
-      const isRecurring = event.data.metadata?.recurring === true || event.data.metadata?.recurring === "true";
+      const isRecurring =
+        event.data.metadata?.recurring === true ||
+        event.data.metadata?.recurring === "true";
       if (event.event === "charge.success" && isRecurring) {
         await handleRecurringChargeSuccess(event);
         res.status(200).send("Recurring donation processed");
@@ -69,7 +71,7 @@ export const paystackWebhook = onRequest(
 
         if (snapshot.empty) {
           logger.error(
-            `One-off charge.success with no matching donation intent. ref=${ref}`
+            `One-off charge.success with no matching donation intent. ref=${ref}`,
           );
         }
 
@@ -88,7 +90,7 @@ export const paystackWebhook = onRequest(
               lastDonationAt: new Date(),
             });
             logger.info(
-              `Updated lifetimeDonations for donor ${donationData.donorUid} by ${amount}`
+              `Updated lifetimeDonations for donor ${donationData.donorUid} by ${amount}`,
             );
           }
         }
@@ -109,7 +111,7 @@ export const paystackWebhook = onRequest(
 
         if (snapshot.empty) {
           logger.error(
-            `charge.failed with no matching donation intent. ref=${ref}`
+            `charge.failed with no matching donation intent. ref=${ref}`,
           );
         }
 
@@ -126,7 +128,7 @@ export const paystackWebhook = onRequest(
       logger.error("Webhook error", error);
       res.status(500).send("Internal error");
     }
-  }
+  },
 );
 
 async function handleRecurringChargeSuccess(event: any) {
@@ -138,7 +140,7 @@ async function handleRecurringChargeSuccess(event: any) {
   const { donorUid, childId, orphanageId, planCode } = data.metadata;
 
   logger.info(
-    `Recurring charge.success: ref=${ref}, donorUid=${donorUid}, childId=${childId}, orphanageId=${orphanageId}, planCode=${planCode}`
+    `Recurring charge.success: ref=${ref}, donorUid=${donorUid}, childId=${childId}, orphanageId=${orphanageId}, planCode=${planCode}`,
   );
 
   // 1. Find plan
@@ -155,7 +157,7 @@ async function handleRecurringChargeSuccess(event: any) {
 
   if (!planDoc || !planDoc.exists) {
     logger.error(
-      `Recurring plan not found for charge.success. planCode=${planCode}, donorUid=${donorUid}, childId=${childId}, orphanageId=${orphanageId}`
+      `Recurring plan not found for charge.success. planCode=${planCode}, donorUid=${donorUid}, childId=${childId}, orphanageId=${orphanageId}`,
     );
     return;
   }
@@ -163,7 +165,7 @@ async function handleRecurringChargeSuccess(event: any) {
   const plan = planDoc.data();
   if (!plan) {
     logger.error(
-      `Recurring plan document missing. planCode=${planCode}, donorUid=${donorUid}`
+      `Recurring plan document missing. planCode=${planCode}, donorUid=${donorUid}`,
     );
     return;
   }
@@ -171,11 +173,12 @@ async function handleRecurringChargeSuccess(event: any) {
   // 2. Save authorizationCode if first time (must be reusable)
   const authorizationCode = data.authorization.authorization_code;
   const isReusable = data.authorization.reusable === true;
+  const isFirstCharge = !plan.authorizationCode_encrypted;
 
-  if (!plan.authorizationCode_encrypted) {
+  if (isFirstCharge) {
     if (!isReusable) {
       logger.error(
-        `Authorization is not reusable. Cannot use for recurring. planCode=${plan.planCode}`
+        `Authorization is not reusable. Cannot use for recurring. planCode=${plan.planCode}`,
       );
       await planDoc.ref.update({
         status: "failed",
@@ -189,7 +192,7 @@ async function handleRecurringChargeSuccess(event: any) {
     // Encrypt the authorization code before storing
     const authCodeEncrypted = await encryptPII(
       authorizationCode,
-      PIIFieldType.AUTHORIZATION_CODE
+      PIIFieldType.AUTHORIZATION_CODE,
     );
 
     await planDoc.ref.update({
@@ -200,35 +203,92 @@ async function handleRecurringChargeSuccess(event: any) {
     });
   }
 
-  // 3. Create donation (always)
-  const donationRef = await db.collection("donations").add({
-    donorUid,
-    donorEmail,
-    childId,
-    orphanageId,
-    planCode: plan.planCode,
-    // Amount fields for consistency with single donations
-    amount: grossAmount,
-    grossAmount,
-    baseAmount: plan.baseAmount || 0,
-    tipAmount: plan.tipAmount || 0,
-    tipPercent: plan.tipPercent || 0,
-    netAmount: plan.netAmount || 0,
-    paystackFee: plan.paystackFeeEstimate || 0,
-    // Payout fields
-    orphanagePayout: plan.orphanageAmount,
-    platformPayout: plan.platformAmount,
-    status: "success",
-    recurring: true,
-    interval: plan.interval,
-    createdAt: new Date(),
-    paystackRef: ref,
-    splitStatus: "success",
-  });
+  // 3. Handle donation: update pending (first charge) or create new (subsequent charges)
+  let donationRef: any;
 
-  logger.info(
-    `Recurring donation logged: donationId=${donationRef.id}, planCode=${plan.planCode}`
-  );
+  if (isFirstCharge) {
+    // First, try to find an existing donation by the Paystack reference (most reliable)
+    const refSnapshot = await db
+      .collection("donations")
+      .where("paystackRef", "==", ref)
+      .limit(1)
+      .get();
+
+    if (!refSnapshot.empty) {
+      const existingDoc = refSnapshot.docs[0];
+      donationRef = existingDoc.ref;
+
+      // Update the existing donation with webhook data
+      await donationRef.update({
+        status: "success",
+        splitStatus: "success",
+        updatedAt: new Date(),
+      });
+
+      logger.info(
+        `Updated initial donation by paystackRef: donationId=${existingDoc.id}, planCode=${plan.planCode}`,
+      );
+    } else {
+      // Last fallback: create a new donation (should be rare)
+      logger.warn(
+        `No pending donation found for first charge. Creating new. planCode=${plan.planCode}`,
+      );
+      donationRef = await db.collection("orphaned_donations").add({
+        donorUid,
+        donorEmail,
+        childId,
+        orphanageId,
+        planCode: plan.planCode,
+        amount: grossAmount,
+        grossAmount,
+        baseAmount: plan.baseAmount || 0,
+        tipAmount: plan.tipAmount || 0,
+        tipPercent: plan.tipPercent || 0,
+        netAmount: plan.netAmount || 0,
+        paystackFee: plan.paystackFeeEstimate || 0,
+        orphanagePayout: plan.orphanageAmount,
+        platformPayout: plan.platformAmount,
+        status: "success",
+        recurring: true,
+        interval: plan.interval,
+        createdAt: new Date(),
+        paystackRef: ref,
+        splitStatus: "success",
+      });
+
+      logger.info(
+        `Recurring donation created (fallback new): donationId=${donationRef.id}, planCode=${plan.planCode}`,
+      );
+    }
+  } else {
+    // Subsequent charges: create new donation entry
+    donationRef = await db.collection("donations").add({
+      donorUid,
+      donorEmail,
+      childId,
+      orphanageId,
+      planCode: plan.planCode,
+      amount: grossAmount,
+      grossAmount,
+      baseAmount: plan.baseAmount || 0,
+      tipAmount: plan.tipAmount || 0,
+      tipPercent: plan.tipPercent || 0,
+      netAmount: plan.netAmount || 0,
+      paystackFee: plan.paystackFeeEstimate || 0,
+      orphanagePayout: plan.orphanageAmount,
+      platformPayout: plan.platformAmount,
+      status: "success",
+      recurring: true,
+      interval: plan.interval,
+      createdAt: new Date(),
+      paystackRef: ref,
+      splitStatus: "success",
+    });
+
+    logger.info(
+      `Recurring donation logged (subsequent charge): donationId=${donationRef.id}, planCode=${plan.planCode}`,
+    );
+  }
 
   // 3b. Update donor's lifetime donations
   if (donorUid) {
@@ -240,7 +300,7 @@ async function handleRecurringChargeSuccess(event: any) {
       lastDonationAt: new Date(),
     });
     logger.info(
-      `Updated lifetimeDonations for donor ${donorUid} by ${amount} (recurring)`
+      `Updated lifetimeDonations for donor ${donorUid} by ${amount} (recurring)`,
     );
   }
 
@@ -257,6 +317,6 @@ async function handleRecurringChargeSuccess(event: any) {
   });
 
   logger.info(
-    `Payout ledger entry created for donationId=${donationRef.id}, orphanageId=${orphanageId}`
+    `Payout ledger entry created for donationId=${donationRef.id}, orphanageId=${orphanageId}`,
   );
 }
