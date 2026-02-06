@@ -39,7 +39,8 @@ async function checkFirestore(): Promise<ServiceCheckResult> {
     await db.collection("_health").doc("ping").get();
     return { status: "pass", latencyMs: Date.now() - start };
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : "Firestore connection failed";
+    const errorMessage =
+      error instanceof Error ? error.message : "Firestore connection failed";
     return {
       status: "fail",
       latencyMs: Date.now() - start,
@@ -55,11 +56,14 @@ async function checkPaystack(): Promise<ServiceCheckResult> {
   const start = Date.now();
   try {
     const PAYSTACK_URI = process.env.PAYSTACK_URI || "https://api.paystack.co";
-    const response = await fetch(`${PAYSTACK_URI}/bank?country=nigeria&perPage=1`, {
-      headers: {
-        Authorization: `Bearer ${paystackSecret.value()}`,
+    const response = await fetch(
+      `${PAYSTACK_URI}/bank?country=nigeria&perPage=1`,
+      {
+        headers: {
+          Authorization: `Bearer ${paystackSecret.value()}`,
+        },
       },
-    });
+    );
 
     if (response.ok) {
       return { status: "pass", latencyMs: Date.now() - start };
@@ -71,7 +75,8 @@ async function checkPaystack(): Promise<ServiceCheckResult> {
       };
     }
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : "Paystack connection failed";
+    const errorMessage =
+      error instanceof Error ? error.message : "Paystack connection failed";
     return {
       status: "fail",
       latencyMs: Date.now() - start,
@@ -83,7 +88,9 @@ async function checkPaystack(): Promise<ServiceCheckResult> {
 /**
  * Check a configured endpoint
  */
-async function checkEndpoint(endpoint: SlaEndpoint): Promise<EndpointCheckResult> {
+async function checkEndpoint(
+  endpoint: SlaEndpoint,
+): Promise<EndpointCheckResult> {
   // Skip endpoints that require authentication for now
   if (endpoint.requiresAuth) {
     return {
@@ -95,7 +102,9 @@ async function checkEndpoint(endpoint: SlaEndpoint): Promise<EndpointCheckResult
   }
 
   const start = Date.now();
-  const baseUrl = process.env.FUNCTIONS_BASE_URL || "https://europe-west1-orphancare-93b41.cloudfunctions.net";
+  const baseUrl =
+    process.env.FUNCTIONS_BASE_URL ||
+    "https://europe-west1-orphancare-93b41.cloudfunctions.net";
 
   try {
     const fetchOptions: RequestInit = {
@@ -106,7 +115,10 @@ async function checkEndpoint(endpoint: SlaEndpoint): Promise<EndpointCheckResult
     };
 
     // Add body for POST/PUT requests if testPayload is provided
-    if ((endpoint.method === "POST" || endpoint.method === "PUT") && endpoint.testPayload) {
+    if (
+      (endpoint.method === "POST" || endpoint.method === "PUT") &&
+      endpoint.testPayload
+    ) {
       fetchOptions.body = JSON.stringify(endpoint.testPayload);
     }
 
@@ -129,7 +141,8 @@ async function checkEndpoint(endpoint: SlaEndpoint): Promise<EndpointCheckResult
       };
     }
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : "Endpoint check failed";
+    const errorMessage =
+      error instanceof Error ? error.message : "Endpoint check failed";
     return {
       status: "fail",
       latencyMs: Date.now() - start,
@@ -162,7 +175,7 @@ async function getSlaEndpoints(): Promise<SlaEndpoint[]> {
  */
 export const slaHealthCheck = onSchedule(
   {
-    schedule: process.env.SLA_CHECK_SCHEDULE || "every 60 minutes",
+    schedule: process.env.SLA_CHECK_SCHEDULE || "every 180 minutes",
     timeZone: "Africa/Lagos",
     region: "europe-west1",
     secrets: [paystackSecret],
@@ -187,7 +200,7 @@ export const slaHealthCheck = onSchedule(
         endpoints.map(async (endpoint) => {
           const result = await checkEndpoint(endpoint);
           return { name: endpoint.name, result };
-        })
+        }),
       );
 
       for (const { name, result } of endpointChecks) {
@@ -197,18 +210,22 @@ export const slaHealthCheck = onSchedule(
       // Determine overall status
       const infraChecks = [firestoreCheck, paystackCheck];
       const allEndpointResults = Object.values(endpointResults).filter(
-        (r) => !r.error?.includes("Skipped")
+        (r) => !r.error?.includes("Skipped"),
       );
 
       const allInfraPassing = infraChecks.every((c) => c.status === "pass");
       const someInfraPassing = infraChecks.some((c) => c.status === "pass");
-      const allEndpointsPassing = allEndpointResults.length === 0 ||
+      const allEndpointsPassing =
+        allEndpointResults.length === 0 ||
         allEndpointResults.every((c) => c.status === "pass");
 
       let overallStatus: "healthy" | "degraded" | "unhealthy";
       if (allInfraPassing && allEndpointsPassing) {
         overallStatus = "healthy";
-      } else if (someInfraPassing || allEndpointResults.some((c) => c.status === "pass")) {
+      } else if (
+        someInfraPassing ||
+        allEndpointResults.some((c) => c.status === "pass")
+      ) {
         overallStatus = "degraded";
       } else {
         overallStatus = "unhealthy";
@@ -229,12 +246,15 @@ export const slaHealthCheck = onSchedule(
 
       logger.info("SLA health check completed", {
         overallStatus,
-        infrastructure: { firestore: firestoreCheck.status, paystack: paystackCheck.status },
+        infrastructure: {
+          firestore: firestoreCheck.status,
+          paystack: paystackCheck.status,
+        },
         endpointsChecked: Object.keys(endpointResults).length,
       });
     } catch (error) {
       logger.error("SLA health check failed", error);
       throw error;
     }
-  }
+  },
 );
