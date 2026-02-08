@@ -1,3 +1,17 @@
 bootstrapUsers.json
 functions/lib/
 .claude/
+
+# Test outputs
+coverage/
+test-results/
+*.junit.xml
+
+# Dependencies
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

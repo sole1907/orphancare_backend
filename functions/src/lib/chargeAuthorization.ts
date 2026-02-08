@@ -100,5 +100,8 @@ export function computeNextChargeAt(from: Date, interval: string): Date {
       throw new Error(`Unsupported interval: ${interval}`);
   }
 
+  // Normalize to 00:00:00 UTC to ensure it's always before 12:00 noon Africa/Lagos
+  d.setUTCHours(0, 0, 0, 0);
+
   return d;
 }
