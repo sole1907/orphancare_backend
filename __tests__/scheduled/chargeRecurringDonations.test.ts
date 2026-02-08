@@ -22,10 +22,15 @@ jest.mock('firebase-functions/v2/scheduler', () => ({
 const mockFetch = jest.fn();
 jest.mock('node-fetch', () => mockFetch);
 
+// Mock encryption module
+const mockDecryptPII = jest.fn().mockResolvedValue('AUTH_decrypted_code');
+jest.mock('../../functions/src/lib/encryption', () => ({
+  decryptPII: mockDecryptPII,
+}));
+
 import {
   mockFirestore,
   mockCollectionRef,
-  mockDocRef,
   createMockDocSnapshot,
   createMockQuerySnapshot,
 } from '../setup/firebaseMocks';
