@@ -42,19 +42,23 @@ export const registerDonor = onRequest(
         return;
       }
 
-      // Create or fetch user
-      let user;
+      // Check if user already exists
       try {
-        user = await auth.getUserByEmail(email);
-        logger.info(`User already exists: ${user.uid}`);
+        await auth.getUserByEmail(email);
+        logger.warn(`Registration attempt with existing email: ${email}`);
+        res.status(409).send("An account with this email already exists");
+        return;
       } catch {
-        user = await auth.createUser({
-          email,
-          password,
-          displayName: name,
-        });
-        logger.info(`New donor created: ${user.uid}`);
+        // User does not exist, proceed with registration
       }
+
+      // Create new user
+      const user = await auth.createUser({
+        email,
+        password,
+        displayName: name,
+      });
+      logger.info(`New donor created: ${user.uid}`);
 
       // Assign donor claim
       await auth.setCustomUserClaims(user.uid, { donor: true });

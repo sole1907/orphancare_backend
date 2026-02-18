@@ -38,12 +38,18 @@ export const inviteOrphanageAdmin = onRequest(
         return;
       }
 
-      let user;
+      // Check if user already exists
       try {
-        user = await auth.getUserByEmail(email);
+        await auth.getUserByEmail(email);
+        logger.warn(`Invite attempt with existing email: ${email}`);
+        res.status(409).send("An account with this email already exists");
+        return;
       } catch {
-        user = await auth.createUser({ email });
+        // User does not exist, proceed with invite
       }
+
+      // Create new user
+      const user = await auth.createUser({ email });
 
       await auth.setCustomUserClaims(user.uid, {
         orphanageAdmin: true,

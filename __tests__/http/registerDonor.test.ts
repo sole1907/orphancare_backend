@@ -132,7 +132,7 @@ describe('registerDonor', () => {
       expect(res.statusCode).toBe(200);
     });
 
-    it('should use existing user when user already exists', async () => {
+    it('should reject registration when email already exists', async () => {
       mockAuth.getUserByEmail.mockResolvedValue({ uid: 'existing-user-id', email: 'existing@example.com' });
 
       const req = createMockRequest({
@@ -148,7 +148,8 @@ describe('registerDonor', () => {
       await registerDonor(req, res);
 
       expect(mockAuth.createUser).not.toHaveBeenCalled();
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(409);
+      expect(res._getData()).toContain('An account with this email already exists');
     });
 
     it('should set donor custom claim', async () => {
