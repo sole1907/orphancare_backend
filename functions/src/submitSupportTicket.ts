@@ -103,7 +103,7 @@ export const submitSupportTicket = onRequest(
         other: "Other",
       };
 
-      const emailSubject = `[OrphanCare Support] ${categoryLabels[category]}: ${subject.trim()}`;
+      const emailSubject = `[Benevovia Support] ${categoryLabels[category]}: ${subject.trim()}`;
 
       try {
         const client = Brevo.ApiClient.instance;
@@ -114,9 +114,9 @@ export const submitSupportTicket = onRequest(
         await apiInstance.sendTransacEmail({
           sender: {
             email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
-            name: process.env.SENDER_NAME || "Sola",
+            name: process.env.SENDER_NAME || "Benevovia",
           },
-          to: [{ email: "support@orphancare.org" }],
+          to: [{ email: "support@benevovia.com" }],
           replyTo: { email: donorEmail, name: donorName },
           subject: emailSubject,
           htmlContent: `

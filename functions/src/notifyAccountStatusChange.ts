@@ -56,7 +56,7 @@ export const notifyAccountStatusChange = onDocumentWritten(
         <h2 style="color: #1e3a8a; margin-bottom: 16px;">${title}</h2>
         ${bodyHtml}
         <p style="margin-top: 24px; font-size: 12px; color: #555;">
-          If you have any questions, contact us at support@orphancare.org
+          If you have any questions, contact us at support@benevovia.com
         </p>
       </div>
     `;
@@ -80,7 +80,7 @@ export const notifyAccountStatusChange = onDocumentWritten(
         "Verify Your Bank Account",
         `
           <p>Hello,</p>
-          <p>We received a request to update your bank account details on <strong>Orphancare</strong>.</p>
+          <p>We received a request to update your bank account details on <strong>Benevovia</strong>.</p>
           <p>Please use the OTP below to confirm this change:</p>
           <p style="font-size: 28px; font-weight: bold; letter-spacing: 4px; margin: 20px 0; color: #1e3a8a;">
             ${otp}
@@ -93,7 +93,7 @@ export const notifyAccountStatusChange = onDocumentWritten(
       await apiInstance.sendTransacEmail({
         sender: {
           email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
-          name: process.env.SENDER_NAME || "Sola",
+          name: process.env.SENDER_NAME || "Benevovia",
         },
         to: [{ email: orphanageEmail }],
         subject: "Verify your bank account details",
@@ -122,14 +122,14 @@ export const notifyAccountStatusChange = onDocumentWritten(
           <p>Hello Admin,</p>
           <p>A new bank account verification request has been submitted and is awaiting your review.</p>
           <p><strong>Orphanage:</strong> ${after.name}</p>
-          <p>Please visit the Action Center on the Orphancare dashboard to approve or reject this request.</p>
+          <p>Please visit the Action Center on the Benevovia dashboard to approve or reject this request.</p>
         `
       );
 
       await apiInstance.sendTransacEmail({
         sender: {
           email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
-          name: process.env.SENDER_NAME || "Sola",
+          name: process.env.SENDER_NAME || "Benevovia",
         },
         to: [{ email: adminEmail }],
         subject: "New bank account verification request",
@@ -149,7 +149,7 @@ export const notifyAccountStatusChange = onDocumentWritten(
         `
           <p>Hello,</p>
           <p>Great news! Your bank account details have been successfully approved.</p>
-          <p>You can now receive payouts on <strong>Orphancare</strong>.</p>
+          <p>You can now receive payouts on <strong>Benevovia</strong>.</p>
           <p>Thank you for completing your verification.</p>
         `
       );
@@ -157,7 +157,7 @@ export const notifyAccountStatusChange = onDocumentWritten(
       await apiInstance.sendTransacEmail({
         sender: {
           email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
-          name: process.env.SENDER_NAME || "Sola",
+          name: process.env.SENDER_NAME || "Benevovia",
         },
         to: [{ email: orphanageEmail }],
         subject: "Your bank account has been approved",
@@ -185,7 +185,7 @@ export const notifyAccountStatusChange = onDocumentWritten(
       await apiInstance.sendTransacEmail({
         sender: {
           email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
-          name: process.env.SENDER_NAME || "Sola",
+          name: process.env.SENDER_NAME || "Benevovia",
         },
         to: [{ email: orphanageEmail }],
         subject: "Your bank account could not be approved",

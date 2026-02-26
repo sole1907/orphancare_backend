@@ -118,17 +118,17 @@ export const registerDonor = onRequest(
       await apiInstance.sendTransacEmail({
         sender: {
           email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
-          name: process.env.SENDER_NAME || "Sola",
+          name: process.env.SENDER_NAME || "Benevovia",
         },
         to: [{ email }],
         subject: "Verify your donor account",
         htmlContent: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background-color: #f9f9f9; border-radius: 8px;">
-            <h2 style="color: #1e3a8a;">Welcome to Orphancare</h2>
+            <h2 style="color: #1e3a8a;">Welcome to Benevovia</h2>
             <p>Hello ${name || ""},</p>
             <p>Please click the button below to verify your email and activate your donor account:</p>
             <a href="${link}" style="display:inline-block;padding:12px 24px;background-color:#1e3a8a;color:white;text-decoration:none;border-radius:4px;margin-top:12px;">Verify Email</a>
-            <p style="margin-top: 24px; font-size: 12px; color: #555;">If you have any questions, contact us at support@orphancare.org</p>
+            <p style="margin-top: 24px; font-size: 12px; color: #555;">If you have any questions, contact us at support@benevovia.com</p>
           </div>
         `,
       });

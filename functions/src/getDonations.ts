@@ -24,6 +24,9 @@ interface DonationListItem {
   status: DonationStatus;
   recurring: boolean;
   createdAt: string;
+  childId?: string;
+  childName?: string;
+  childPhoto?: string;
 }
 
 interface DonationsListResponse {
@@ -117,9 +120,10 @@ export const getDonations = onRequest(
 
       const donationsSnapshot = await donationsQuery.get();
 
-      // Cache for donor and orphanage data to reduce reads
+      // Cache for donor, orphanage, and child data to reduce reads
       const donorCache = new Map<string, { name: string; email: string }>();
       const orphanageCache = new Map<string, string>();
+      const childCache = new Map<string, { name: string; photo: string | null }>();
 
       const donationsList: DonationListItem[] = [];
 
@@ -196,6 +200,31 @@ export const getDonations = onRequest(
           }
         }
 
+        // Get child info
+        let childId: string | undefined;
+        let childName: string | undefined;
+        let childPhoto: string | undefined;
+
+        if (donation.childId) {
+          childId = donation.childId as string;
+          if (childCache.has(childId)) {
+            const cached = childCache.get(childId)!;
+            childName = cached.name;
+            childPhoto = cached.photo ?? undefined;
+          } else {
+            const childDoc = await db.collection("children").doc(childId).get();
+            const childData = childDoc.data();
+            if (childData) {
+              childName = childData.name ?? "Unknown";
+              childPhoto = childData.photoUrl ?? null;
+            }
+            childCache.set(childId, {
+              name: childName ?? "Unknown",
+              photo: childPhoto ?? null,
+            });
+          }
+        }
+
         const baseAmount = donation.baseAmount ?? 0;
         const tipAmount = donation.tipAmount ?? 0;
         const paystackFee = donation.paystackFee ?? 0;
@@ -213,6 +242,9 @@ export const getDonations = onRequest(
           status: donationStatus,
           recurring: donation.recurring ?? false,
           createdAt: createdAt?.toISOString?.() ?? "",
+          childId,
+          childName,
+          childPhoto,
         });
       }
 

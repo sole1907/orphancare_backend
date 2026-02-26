@@ -117,6 +117,7 @@ interface CreateRecurringPlanIntentParams {
   platformAmount: number;
   interval: string;
   donorEmail: string;
+  preferredPaymentDay?: number;
 }
 
 /**
@@ -183,12 +184,13 @@ export async function createRecurringPlanIntent(
     platformAmount,
     interval,
     donorEmail,
+    preferredPaymentDay,
   } = params;
 
   const planCode = `RC_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   logger.info(
-    `Creating recurring plan intent: planCode=${planCode}, donorUid=${donorUid}, childId=${childId}, orphanageId=${orphanageId}, interval=${interval}`
+    `Creating recurring plan intent: planCode=${planCode}, donorUid=${donorUid}, childId=${childId}, orphanageId=${orphanageId}, interval=${interval}, preferredPaymentDay=${preferredPaymentDay}`
   );
 
   await db.collection("recurringPlans").doc(planCode).set({
@@ -209,6 +211,7 @@ export async function createRecurringPlanIntent(
     status: "pending",
     authorizationCode: null,
     customerEmail: donorEmail,
+    preferredPaymentDay: preferredPaymentDay ?? null,
   });
 
   logger.info(`Recurring plan intent stored with planCode=${planCode}`);

@@ -187,7 +187,7 @@ async function handleRecurringChargeSuccess(event: any) {
       return;
     }
 
-    const nextChargeAt = computeNextChargeAt(new Date(), plan.interval);
+    const nextChargeAt = computeNextChargeAt(new Date(), plan.interval, plan.preferredPaymentDay);
 
     // Encrypt the authorization code before storing
     const authCodeEncrypted = await encryptPII(

@@ -38,6 +38,7 @@ export const initiateDonation = onRequest(
         tipPercent,
         recurring,
         interval,
+        preferredPaymentDay,
       } = req.body;
 
       // 🔐 Auth check
@@ -197,6 +198,24 @@ export const initiateDonation = onRequest(
         return;
       }
 
+      // Validate preferredPaymentDay if provided
+      const validatedPreferredPaymentDay =
+        preferredPaymentDay !== undefined && preferredPaymentDay !== null
+          ? Math.min(Math.max(Math.floor(Number(preferredPaymentDay)), 1), 31)
+          : undefined;
+
+      if (
+        preferredPaymentDay !== undefined &&
+        preferredPaymentDay !== null &&
+        (isNaN(Number(preferredPaymentDay)) ||
+          Number(preferredPaymentDay) < 1 ||
+          Number(preferredPaymentDay) > 31)
+      ) {
+        logger.warn(
+          `Invalid preferredPaymentDay: ${preferredPaymentDay}. Must be 1-31. Using clamped value.`
+        );
+      }
+
       // 1. Fetch orphanage subaccount (same as one-off)
       const orphanageDocRecurring = await db
         .collection("orphanages")
@@ -254,6 +273,7 @@ export const initiateDonation = onRequest(
         platformAmount,
         interval,
         donorEmail,
+        preferredPaymentDay: validatedPreferredPaymentDay,
       });
 
       logger.info(`Recurring plan created: planCode=${planCode}`);

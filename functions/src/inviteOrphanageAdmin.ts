@@ -82,18 +82,18 @@ export const inviteOrphanageAdmin = onRequest(
       await apiInstance.sendTransacEmail({
         sender: {
           email: `${process.env.SENDER_EMAIL || "sola.akanmu@gmail.com"}`,
-          name: `${process.env.SENDER_NAME || "Sola"}`,
+          name: `${process.env.SENDER_NAME || "Benevovia"}`,
         },
         to: [{ email }],
         subject: "Complete your Orphanage Admin registration",
         htmlContent: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background-color: #f9f9f9; border-radius: 8px;">
-            <h2 style="color: #1e3a8a;">Welcome to Orphancare</h2>
+            <h2 style="color: #1e3a8a;">Welcome to Benevovia</h2>
             <p>Hello,</p>
-            <p>You’ve been invited to manage your orphanage on <strong>Orphancare</strong>.</p>
+            <p>You've been invited to manage your orphanage on <strong>Benevovia</strong>.</p>
             <p>Please click the button below to complete your registration and set your password:</p>
             <a href="${link}" style="display: inline-block; padding: 12px 24px; background-color: #1e3a8a; color: white; text-decoration: none; border-radius: 4px; margin-top: 12px;">Complete Registration</a>
-            <p style="margin-top: 24px; font-size: 12px; color: #555;">If you have any questions, contact us at support@orphancare.org</p>
+            <p style="margin-top: 24px; font-size: 12px; color: #555;">If you have any questions, contact us at support@benevovia.com</p>
           </div>
         `,
       });

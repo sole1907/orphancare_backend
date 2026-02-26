@@ -93,7 +93,7 @@ export const chargeRecurringDonations = onSchedule(
         } catch (err: any) {
           const currentRetries = plan.retryCount || 0;
           const maxRetries = plan.maxRetries || 3;
-          const nextChargeAt = computeNextChargeAt(now, plan.interval);
+          const nextChargeAt = computeNextChargeAt(now, plan.interval, plan.preferredPaymentDay);
 
           if (currentRetries + 1 >= maxRetries) {
             await doc.ref.update({

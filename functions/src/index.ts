@@ -16,6 +16,7 @@ export * from "./calculateDonationFee";
 export * from "./getUpdatesForDonor";
 export * from "./getDonationHistory";
 export * from "./chargeRecurringDonations";
+export * from "./sendPaymentReminders";
 export * from "./getFAQs";
 export * from "./getRecurringPlans";
 export * from "./cancelRecurringDonation";

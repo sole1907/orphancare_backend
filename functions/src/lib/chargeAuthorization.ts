@@ -71,7 +71,7 @@ export async function chargeAuthorizationForPlan({
   // Here we only update nextChargeAt / retryCount.
 
   const now = new Date();
-  const nextChargeAt = computeNextChargeAt(now, interval);
+  const nextChargeAt = computeNextChargeAt(now, interval, plan.preferredPaymentDay);
 
   await planDocRef.update({
     lastChargeAt: now,
@@ -80,7 +80,11 @@ export async function chargeAuthorizationForPlan({
   });
 }
 
-export function computeNextChargeAt(from: Date, interval: string): Date {
+export function computeNextChargeAt(
+  from: Date,
+  interval: string,
+  preferredPaymentDay?: number
+): Date {
   const d = new Date(from);
 
   switch (interval.toLowerCase()) {
@@ -98,6 +102,14 @@ export function computeNextChargeAt(from: Date, interval: string): Date {
       break;
     default:
       throw new Error(`Unsupported interval: ${interval}`);
+  }
+
+  // Adjust to preferred day if set (skip for daily)
+  if (preferredPaymentDay && interval.toLowerCase() !== "daily") {
+    const targetYear = d.getFullYear();
+    const targetMonth = d.getMonth();
+    const lastDayOfMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+    d.setDate(Math.min(preferredPaymentDay, lastDayOfMonth));
   }
 
   // Normalize to 00:00:00 UTC to ensure it's always before 12:00 noon Africa/Lagos

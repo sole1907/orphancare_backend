@@ -19,6 +19,7 @@ interface RecurringPlanItem {
   createdAt: Date;
   nextChargeAt: Date | null;
   cancelledAt: Date | null;
+  preferredPaymentDay: number | null;
 }
 
 export const getRecurringPlans = onRequest(
@@ -136,6 +137,7 @@ export const getRecurringPlans = onRequest(
           createdAt: data.createdAt?.toDate?.() || data.createdAt,
           nextChargeAt: data.nextChargeAt?.toDate?.() || data.nextChargeAt || null,
           cancelledAt: data.cancelledAt?.toDate?.() || data.cancelledAt || null,
+          preferredPaymentDay: data.preferredPaymentDay ?? null,
         };
       });
 
