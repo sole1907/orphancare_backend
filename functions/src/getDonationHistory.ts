@@ -4,6 +4,10 @@ import { db } from "./lib/firebaseAdmin";
 import { verifyAuth } from "./lib/authUtils";
 import { handleCors } from "./lib/corsUtils";
 import { allowedOrigins } from "./config/constants";
+import { decryptPII, EncryptedField } from "./lib/encryption";
+import { defineSecret } from "firebase-functions/params";
+
+const devEncryptionKey = defineSecret("DEV_ENCRYPTION_KEY");
 
 interface DonationHistoryItem {
   id: string;
@@ -23,7 +27,7 @@ interface DonationHistoryItem {
 }
 
 export const getDonationHistory = onRequest(
-  { region: "europe-west1" },
+  { region: "europe-west1", secrets: [devEncryptionKey] },
   async (req, res) => {
     if (handleCors(req, res, allowedOrigins)) return;
 
@@ -88,15 +92,37 @@ export const getDonationHistory = onRequest(
           const batch = childIdArray.slice(i, i + 100);
           const refs = batch.map((id) => db.collection("children").doc(id));
           const childDocs = await db.getAll(...refs);
-          childDocs.forEach((doc) => {
+
+          // Decrypt encrypted names in parallel
+          const decryptionPromises = childDocs.map(async (doc) => {
             if (doc.exists) {
               const data = doc.data();
+              let childName: string;
+
+              // Check if name is encrypted (new format)
+              if (data?.name_encrypted) {
+                try {
+                  childName = await decryptPII(
+                    data.name_encrypted as EncryptedField
+                  );
+                } catch (err) {
+                  logger.error(`Failed to decrypt name for child ${doc.id}`, err);
+                  // Fall back to plain name or Unknown Child
+                  childName = data?.name || "Unknown Child";
+                }
+              } else {
+                // Legacy format - use plain name
+                childName = data?.name || "Unknown Child";
+              }
+
               childMap.set(doc.id, {
-                name: data?.name || "Unknown Child",
+                name: childName,
                 photo: data?.photoUrl || null,
               });
             }
           });
+
+          await Promise.all(decryptionPromises);
         }
       }
 
