@@ -7,12 +7,17 @@ import * as crypto from "crypto";
 import { computeNextChargeAt } from "./lib/chargeAuthorization";
 import { FieldValue } from "firebase-admin/firestore";
 import { encryptPII, PIIFieldType } from "./lib/encryption";
+import {
+  sendDonationThankYouEmail,
+  sendRecurringChargeConfirmationEmail,
+} from "./lib/emailUtils";
 
 const paystackSecret = defineSecret("PAYSTACK_SECRET_KEY");
 const devEncryptionKey = defineSecret("DEV_ENCRYPTION_KEY");
+const brevoApiKey = defineSecret("BREVO_API_KEY");
 
 export const paystackWebhook = onRequest(
-  { region: "europe-west1", secrets: [paystackSecret, devEncryptionKey] },
+  { region: "europe-west1", secrets: [paystackSecret, devEncryptionKey, brevoApiKey] },
   async (req, res) => {
     try {
       const forwardedFor = req.headers["x-forwarded-for"];
@@ -53,9 +58,8 @@ export const paystackWebhook = onRequest(
         event.data.metadata?.recurring === true ||
         event.data.metadata?.recurring === "true";
       if (event.event === "charge.success" && isRecurring) {
-        await handleRecurringChargeSuccess(event);
+        await handleRecurringChargeSuccess(event, brevoApiKey.value());
         res.status(200).send("Recurring donation processed");
-        // sendTransacEmail({ ... "Thank you for your recurring donation" ... })
         return;
       }
 
@@ -92,6 +96,44 @@ export const paystackWebhook = onRequest(
             logger.info(
               `Updated lifetimeDonations for donor ${donationData.donorUid} by ${amount}`,
             );
+          }
+
+          // Send thank you email for one-off donation
+          try {
+            const donorEmail = donationData.donorEmail || event.data.customer?.email;
+            if (donorEmail) {
+              // Fetch child and orphanage names
+              let childName = "a child in need";
+              let orphanageName = "the orphanage";
+
+              if (donationData.childId) {
+                const childDoc = await db.collection("children").doc(donationData.childId).get();
+                if (childDoc.exists) {
+                  childName = childDoc.data()?.name || childName;
+                }
+              }
+
+              if (donationData.orphanageId) {
+                const orphanageDoc = await db.collection("orphanages").doc(donationData.orphanageId).get();
+                if (orphanageDoc.exists) {
+                  orphanageName = orphanageDoc.data()?.name || orphanageName;
+                }
+              }
+
+              await sendDonationThankYouEmail({
+                donorEmail,
+                childName,
+                orphanageName,
+                amount: donationData.baseAmount || donationData.amount || 0,
+                isRecurring: false,
+                brevoApiKey: brevoApiKey.value(),
+              });
+
+              logger.info(`Thank you email sent for one-off donation to ${donorEmail}`);
+            }
+          } catch (emailError) {
+            logger.error("Failed to send one-off donation thank you email", emailError);
+            // Don't fail the webhook if email fails
           }
         }
 
@@ -131,7 +173,7 @@ export const paystackWebhook = onRequest(
   },
 );
 
-async function handleRecurringChargeSuccess(event: any) {
+async function handleRecurringChargeSuccess(event: any, brevoApiKeyValue: string) {
   const data = event.data;
   const ref = data.reference;
   const donorEmail = data.customer.email;
@@ -319,4 +361,73 @@ async function handleRecurringChargeSuccess(event: any) {
   logger.info(
     `Payout ledger entry created for donationId=${donationRef.id}, orphanageId=${orphanageId}`,
   );
+
+  // 5. Send thank you / confirmation email
+  try {
+    // Fetch child and orphanage names
+    let childName = "a child in need";
+    let orphanageName = "the orphanage";
+
+    if (childId) {
+      const childDoc = await db.collection("children").doc(childId).get();
+      if (childDoc.exists) {
+        childName = childDoc.data()?.name || childName;
+      }
+    }
+
+    if (orphanageId) {
+      const orphanageDoc = await db.collection("orphanages").doc(orphanageId).get();
+      if (orphanageDoc.exists) {
+        orphanageName = orphanageDoc.data()?.name || orphanageName;
+      }
+    }
+
+    // Get the next charge date - for first charge it was computed earlier, for subsequent we compute now
+    let nextChargeAt: Date;
+    if (isFirstCharge) {
+      // For first charge, nextChargeAt was computed and stored during plan activation
+      nextChargeAt = computeNextChargeAt(new Date(), plan.interval, plan.preferredPaymentDay);
+    } else {
+      // For subsequent charges, compute the next charge date from now
+      // Also update the plan's nextChargeAt for subsequent charges
+      nextChargeAt = computeNextChargeAt(new Date(), plan.interval, plan.preferredPaymentDay);
+      await planDoc.ref.update({
+        nextChargeAt,
+        lastChargeAt: new Date(),
+        retryCount: 0, // Reset retry count on successful charge
+      });
+    }
+
+    const amount = plan.baseAmount || grossAmount || 0;
+
+    if (isFirstCharge) {
+      // First charge: send thank you for starting recurring donation
+      await sendDonationThankYouEmail({
+        donorEmail,
+        childName,
+        orphanageName,
+        amount,
+        isRecurring: true,
+        interval: plan.interval,
+        nextChargeDate: nextChargeAt,
+        brevoApiKey: brevoApiKeyValue,
+      });
+      logger.info(`Thank you email sent for first recurring donation to ${donorEmail}`);
+    } else {
+      // Subsequent charge: send confirmation email
+      await sendRecurringChargeConfirmationEmail({
+        donorEmail,
+        childName,
+        orphanageName,
+        amount,
+        interval: plan.interval,
+        nextChargeDate: nextChargeAt,
+        brevoApiKey: brevoApiKeyValue,
+      });
+      logger.info(`Recurring charge confirmation email sent to ${donorEmail}`);
+    }
+  } catch (emailError) {
+    logger.error("Failed to send recurring donation email", emailError);
+    // Don't fail the webhook if email fails
+  }
 }

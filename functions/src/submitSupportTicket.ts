@@ -7,6 +7,7 @@ import { allowedOrigins } from "./config/constants";
 import { FieldValue } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import Brevo from "sib-api-v3-sdk";
+import { getEmailHeader, SENDER_EMAIL, SENDER_NAME } from "./lib/emailUtils";
 
 const brevoApiKey = defineSecret("BREVO_API_KEY");
 
@@ -113,14 +114,15 @@ export const submitSupportTicket = onRequest(
 
         await apiInstance.sendTransacEmail({
           sender: {
-            email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
-            name: process.env.SENDER_NAME || "Benevovia",
+            email: SENDER_EMAIL,
+            name: SENDER_NAME,
           },
           to: [{ email: "support@benevovia.com" }],
           replyTo: { email: donorEmail, name: donorName },
           subject: emailSubject,
           htmlContent: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background-color: #f9f9f9; border-radius: 8px;">
+              ${getEmailHeader()}
               <h2 style="color: #1e3a8a;">New Support Ticket</h2>
               <p><strong>From:</strong> ${donorName} (${donorEmail})</p>
               <p><strong>Category:</strong> ${categoryLabels[category]}</p>

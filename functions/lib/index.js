@@ -32,6 +32,7 @@ __exportStar(require("./calculateDonationFee"), exports);
 __exportStar(require("./getUpdatesForDonor"), exports);
 __exportStar(require("./getDonationHistory"), exports);
 __exportStar(require("./chargeRecurringDonations"), exports);
+__exportStar(require("./sendPaymentReminders"), exports);
 __exportStar(require("./getFAQs"), exports);
 __exportStar(require("./getRecurringPlans"), exports);
 __exportStar(require("./cancelRecurringDonation"), exports);

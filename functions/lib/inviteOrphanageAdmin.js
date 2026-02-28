@@ -45,6 +45,7 @@ const params_1 = require("firebase-functions/params");
 const authUtils_1 = require("./lib/authUtils");
 const corsUtils_1 = require("./lib/corsUtils");
 const constants_1 = require("./config/constants");
+const emailUtils_1 = require("./lib/emailUtils");
 const brevoApiKey = (0, params_1.defineSecret)("BREVO_API_KEY");
 exports.inviteOrphanageAdmin = (0, https_1.onRequest)({ region: "europe-west1", secrets: [brevoApiKey] }, async (req, res) => {
     logger.info("Incoming headers:\n" + JSON.stringify(req.headers, null, 2));
@@ -70,13 +71,18 @@ exports.inviteOrphanageAdmin = (0, https_1.onRequest)({ region: "europe-west1", 
             logger.error("Missing email or orphanageId");
             return;
         }
-        let user;
+        // Check if user already exists
         try {
-            user = await firebaseAdmin_1.auth.getUserByEmail(email);
+            await firebaseAdmin_1.auth.getUserByEmail(email);
+            logger.warn(`Invite attempt with existing email: ${email}`);
+            res.status(409).send("An account with this email already exists");
+            return;
         }
         catch {
-            user = await firebaseAdmin_1.auth.createUser({ email });
+            // User does not exist, proceed with invite
         }
+        // Create new user
+        const user = await firebaseAdmin_1.auth.createUser({ email });
         await firebaseAdmin_1.auth.setCustomUserClaims(user.uid, {
             orphanageAdmin: true,
             orphanageId,
@@ -94,23 +100,21 @@ exports.inviteOrphanageAdmin = (0, https_1.onRequest)({ region: "europe-west1", 
         const client = sib_api_v3_sdk_1.default.ApiClient.instance;
         client.authentications["api-key"].apiKey = brevoApiKey.value();
         const apiInstance = new sib_api_v3_sdk_1.default.TransactionalEmailsApi();
+        const emailBodyContent = `
+        <h2 style="color: #1e3a8a; margin-bottom: 16px;">Welcome!</h2>
+        <p>Hello,</p>
+        <p>You've been invited to manage your orphanage on <strong>Benevovia</strong>.</p>
+        <p>Please click the button below to complete your registration and set your password:</p>
+        <a href="${link}" style="display: inline-block; padding: 12px 24px; background-color: #1e3a8a; color: white; text-decoration: none; border-radius: 4px; margin-top: 12px;">Complete Registration</a>
+      `;
         await apiInstance.sendTransacEmail({
             sender: {
-                email: `${process.env.SENDER_EMAIL || "sola.akanmu@gmail.com"}`,
-                name: `${process.env.SENDER_NAME || "Sola"}`,
+                email: emailUtils_1.SENDER_EMAIL,
+                name: emailUtils_1.SENDER_NAME,
             },
             to: [{ email }],
             subject: "Complete your Orphanage Admin registration",
-            htmlContent: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background-color: #f9f9f9; border-radius: 8px;">
-            <h2 style="color: #1e3a8a;">Welcome to Orphancare</h2>
-            <p>Hello,</p>
-            <p>You’ve been invited to manage your orphanage on <strong>Orphancare</strong>.</p>
-            <p>Please click the button below to complete your registration and set your password:</p>
-            <a href="${link}" style="display: inline-block; padding: 12px 24px; background-color: #1e3a8a; color: white; text-decoration: none; border-radius: 4px; margin-top: 12px;">Complete Registration</a>
-            <p style="margin-top: 24px; font-size: 12px; color: #555;">If you have any questions, contact us at support@orphancare.org</p>
-          </div>
-        `,
+            htmlContent: (0, emailUtils_1.wrapEmailContent)(emailBodyContent),
         });
         logger.info(`Invite sent to ${email}`);
         res.status(200).send("Invite sent");

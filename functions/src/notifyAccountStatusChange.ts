@@ -4,6 +4,12 @@ import { auth, db } from "./lib/firebaseAdmin";
 import Brevo from "sib-api-v3-sdk";
 import { defineSecret } from "firebase-functions/params";
 import { hashOTP } from "./lib/encryption";
+import {
+  getEmailHeader,
+  getEmailFooter,
+  SENDER_EMAIL,
+  SENDER_NAME,
+} from "./lib/emailUtils";
 
 const brevoApiKey = defineSecret("BREVO_API_KEY");
 const devEncryptionKey = defineSecret("DEV_ENCRYPTION_KEY");
@@ -50,14 +56,13 @@ export const notifyAccountStatusChange = onDocumentWritten(
     client.authentications["api-key"].apiKey = brevoApiKey.value();
     const apiInstance = new Brevo.TransactionalEmailsApi();
 
-    // Shared email wrapper
+    // Shared email wrapper with logo
     const wrapEmail = (title: string, bodyHtml: string) => `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background-color: #f9f9f9; border-radius: 8px;">
+        ${getEmailHeader()}
         <h2 style="color: #1e3a8a; margin-bottom: 16px;">${title}</h2>
         ${bodyHtml}
-        <p style="margin-top: 24px; font-size: 12px; color: #555;">
-          If you have any questions, contact us at support@benevovia.com
-        </p>
+        ${getEmailFooter()}
       </div>
     `;
 
@@ -92,8 +97,8 @@ export const notifyAccountStatusChange = onDocumentWritten(
 
       await apiInstance.sendTransacEmail({
         sender: {
-          email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
-          name: process.env.SENDER_NAME || "Benevovia",
+          email: SENDER_EMAIL,
+          name: SENDER_NAME,
         },
         to: [{ email: orphanageEmail }],
         subject: "Verify your bank account details",
@@ -128,8 +133,8 @@ export const notifyAccountStatusChange = onDocumentWritten(
 
       await apiInstance.sendTransacEmail({
         sender: {
-          email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
-          name: process.env.SENDER_NAME || "Benevovia",
+          email: SENDER_EMAIL,
+          name: SENDER_NAME,
         },
         to: [{ email: adminEmail }],
         subject: "New bank account verification request",
@@ -156,8 +161,8 @@ export const notifyAccountStatusChange = onDocumentWritten(
 
       await apiInstance.sendTransacEmail({
         sender: {
-          email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
-          name: process.env.SENDER_NAME || "Benevovia",
+          email: SENDER_EMAIL,
+          name: SENDER_NAME,
         },
         to: [{ email: orphanageEmail }],
         subject: "Your bank account has been approved",
@@ -184,8 +189,8 @@ export const notifyAccountStatusChange = onDocumentWritten(
 
       await apiInstance.sendTransacEmail({
         sender: {
-          email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
-          name: process.env.SENDER_NAME || "Benevovia",
+          email: SENDER_EMAIL,
+          name: SENDER_NAME,
         },
         to: [{ email: orphanageEmail }],
         subject: "Your bank account could not be approved",

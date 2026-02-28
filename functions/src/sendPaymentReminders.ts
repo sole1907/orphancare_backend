@@ -4,6 +4,15 @@ import { db } from "./lib/firebaseAdmin";
 import { defineSecret } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import Brevo from "sib-api-v3-sdk";
+import {
+  wrapEmailContent,
+  getCancellationInfo,
+  formatNGN,
+  formatDateNG,
+  getIntervalText,
+  SENDER_EMAIL,
+  SENDER_NAME,
+} from "./lib/emailUtils";
 
 const brevoApiKey = defineSecret("BREVO_API_KEY");
 
@@ -109,46 +118,37 @@ export const sendPaymentReminders = onSchedule(
 
       // Format the charge date
       const chargeDate = plan.nextChargeAt?.toDate?.() || new Date(targetDate);
-      const formattedDate = chargeDate.toLocaleDateString("en-NG", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
+      const formattedDate = formatDateNG(chargeDate);
 
       // Format amount
       const amount = plan.grossAmount || plan.amount || 0;
-      const formattedAmount = new Intl.NumberFormat("en-NG", {
-        style: "currency",
-        currency: "NGN",
-      }).format(amount);
+      const formattedAmount = formatNGN(amount);
+      const intervalText = getIntervalText(plan.interval);
 
-      const htmlContent = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px; background-color: #f9f9f9; border-radius: 8px;">
-          <h2 style="color: #1e3a8a; margin-bottom: 16px;">Upcoming Donation Reminder</h2>
-          <p>Hello,</p>
-          <p>This is a friendly reminder that your recurring donation to <strong>${childName}</strong> at <strong>${orphanageName}</strong> is scheduled for <strong>${formattedDate}</strong>.</p>
-          <div style="background-color: #e8f0fe; padding: 16px; border-radius: 8px; margin: 20px 0;">
-            <p style="margin: 0; font-size: 18px; color: #1e3a8a;">
-              <strong>Amount:</strong> ${formattedAmount}
-            </p>
-            <p style="margin: 8px 0 0 0; color: #555;">
-              <strong>Interval:</strong> ${plan.interval || "Monthly"}
-            </p>
-          </div>
-          <p>Please ensure your card is active and has sufficient funds for a smooth transaction.</p>
-          <p>You can manage your recurring donations anytime in the Benevovia app.</p>
-          <p style="margin-top: 24px; font-size: 12px; color: #555;">
-            Thank you for your continued support! If you have any questions, contact us at support@benevovia.com
+      const bodyContent = `
+        <h2 style="color: #1e3a8a; margin-bottom: 16px;">Upcoming Donation Reminder</h2>
+        <p>Hello,</p>
+        <p>This is a friendly reminder that your recurring donation to <strong>${childName}</strong> at <strong>${orphanageName}</strong> is scheduled for <strong>${formattedDate}</strong>.</p>
+        <div style="background-color: #e8f0fe; padding: 16px; border-radius: 8px; margin: 20px 0;">
+          <p style="margin: 0; font-size: 18px; color: #1e3a8a;">
+            <strong>Amount:</strong> ${formattedAmount}
+          </p>
+          <p style="margin: 8px 0 0 0; color: #555;">
+            <strong>Frequency:</strong> ${intervalText}
           </p>
         </div>
+        <p>Please ensure your card is active and has sufficient funds for a smooth transaction.</p>
+        ${getCancellationInfo()}
+        <p style="margin-top: 16px;">Thank you for your continued support!</p>
       `;
+
+      const htmlContent = wrapEmailContent(bodyContent);
 
       try {
         await apiInstance.sendTransacEmail({
           sender: {
-            email: process.env.SENDER_EMAIL || "sola.akanmu@gmail.com",
-            name: process.env.SENDER_NAME || "Benevovia",
+            email: SENDER_EMAIL,
+            name: SENDER_NAME,
           },
           to: [{ email: donorEmail }],
           subject: "Upcoming Donation Reminder",
