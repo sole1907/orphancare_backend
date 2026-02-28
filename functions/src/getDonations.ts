@@ -27,6 +27,8 @@ interface DonationListItem {
   childId?: string;
   childName?: string;
   childPhoto?: string;
+  childGender?: string;
+  childStory?: string;
 }
 
 interface DonationsListResponse {
@@ -138,7 +140,7 @@ export const getDonations = onRequest(
       // Cache for donor, orphanage, and child data to reduce reads
       const donorCache = new Map<string, { name: string; email: string }>();
       const orphanageCache = new Map<string, string>();
-      const childCache = new Map<string, { name: string; photo: string | null }>();
+      const childCache = new Map<string, { name: string; photo: string | null; gender: string | null; story: string | null }>();
 
       const donationsList: DonationListItem[] = [];
 
@@ -219,6 +221,8 @@ export const getDonations = onRequest(
         let childId: string | undefined;
         let childName: string | undefined;
         let childPhoto: string | undefined;
+        let childGender: string | undefined;
+        let childStory: string | undefined;
 
         if (donation.childId) {
           childId = donation.childId as string;
@@ -226,16 +230,22 @@ export const getDonations = onRequest(
             const cached = childCache.get(childId)!;
             childName = cached.name;
             childPhoto = cached.photo ?? undefined;
+            childGender = cached.gender ?? undefined;
+            childStory = cached.story ?? undefined;
           } else {
             const childDoc = await db.collection("children").doc(childId).get();
             const childData = childDoc.data();
             if (childData) {
               childName = await extractChildName(childData);
               childPhoto = childData.photoUrl ?? null;
+              childGender = childData.gender ?? null;
+              childStory = childData.story ?? null;
             }
             childCache.set(childId, {
               name: childName ?? "Unknown",
               photo: childPhoto ?? null,
+              gender: childGender ?? null,
+              story: childStory ?? null,
             });
           }
         }
@@ -260,6 +270,8 @@ export const getDonations = onRequest(
           childId,
           childName,
           childPhoto,
+          childGender,
+          childStory,
         });
       }
 
