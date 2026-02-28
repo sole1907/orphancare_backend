@@ -70,6 +70,21 @@ async function extractDonorPII(
   return { name, email };
 }
 
+/**
+ * Extract child name, handling both encrypted and plaintext formats
+ */
+async function extractChildName(childData: any): Promise<string> {
+  // Try encrypted field first, fall back to plaintext
+  if (childData.name_encrypted) {
+    try {
+      return await decryptPII(childData.name_encrypted as EncryptedField);
+    } catch {
+      return childData.name ?? "Unknown";
+    }
+  }
+  return childData.name ?? "Unknown";
+}
+
 export const getDonations = onRequest(
   { region: "europe-west1", secrets: [devEncryptionKey] },
   async (req, res) => {
@@ -215,7 +230,7 @@ export const getDonations = onRequest(
             const childDoc = await db.collection("children").doc(childId).get();
             const childData = childDoc.data();
             if (childData) {
-              childName = childData.name ?? "Unknown";
+              childName = await extractChildName(childData);
               childPhoto = childData.photoUrl ?? null;
             }
             childCache.set(childId, {
