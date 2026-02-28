@@ -29,6 +29,8 @@ interface DonationListItem {
   childPhoto?: string;
   childGender?: string;
   childStory?: string;
+  childDateOfBirth?: string;
+  childHobbies?: string[];
 }
 
 interface DonationsListResponse {
@@ -87,6 +89,21 @@ async function extractChildName(childData: any): Promise<string> {
   return childData.name ?? "Unknown";
 }
 
+/**
+ * Extract child birthday/date of birth, handling both encrypted and plaintext formats
+ */
+async function extractChildDateOfBirth(childData: any): Promise<string | null> {
+  // Try encrypted field first, fall back to plaintext
+  if (childData.birthday_encrypted) {
+    try {
+      return await decryptPII(childData.birthday_encrypted as EncryptedField);
+    } catch {
+      return childData.birthday ?? null;
+    }
+  }
+  return childData.birthday ?? null;
+}
+
 export const getDonations = onRequest(
   { region: "europe-west1", secrets: [devEncryptionKey] },
   async (req, res) => {
@@ -140,7 +157,7 @@ export const getDonations = onRequest(
       // Cache for donor, orphanage, and child data to reduce reads
       const donorCache = new Map<string, { name: string; email: string }>();
       const orphanageCache = new Map<string, string>();
-      const childCache = new Map<string, { name: string; photo: string | null; gender: string | null; story: string | null }>();
+      const childCache = new Map<string, { name: string; photo: string | null; gender: string | null; story: string | null; dateOfBirth: string | null; hobbies: string[] }>();
 
       const donationsList: DonationListItem[] = [];
 
@@ -223,6 +240,8 @@ export const getDonations = onRequest(
         let childPhoto: string | undefined;
         let childGender: string | undefined;
         let childStory: string | undefined;
+        let childDateOfBirth: string | undefined;
+        let childHobbies: string[] | undefined;
 
         if (donation.childId) {
           childId = donation.childId as string;
@@ -232,6 +251,8 @@ export const getDonations = onRequest(
             childPhoto = cached.photo ?? undefined;
             childGender = cached.gender ?? undefined;
             childStory = cached.story ?? undefined;
+            childDateOfBirth = cached.dateOfBirth ?? undefined;
+            childHobbies = cached.hobbies;
           } else {
             const childDoc = await db.collection("children").doc(childId).get();
             const childData = childDoc.data();
@@ -240,12 +261,16 @@ export const getDonations = onRequest(
               childPhoto = childData.photoUrl ?? null;
               childGender = childData.gender ?? null;
               childStory = childData.story ?? null;
+              childDateOfBirth = await extractChildDateOfBirth(childData) ?? undefined;
+              childHobbies = childData.hobbies ?? [];
             }
             childCache.set(childId, {
               name: childName ?? "Unknown",
               photo: childPhoto ?? null,
               gender: childGender ?? null,
               story: childStory ?? null,
+              dateOfBirth: childDateOfBirth ?? null,
+              hobbies: childHobbies ?? [],
             });
           }
         }
@@ -272,6 +297,8 @@ export const getDonations = onRequest(
           childPhoto,
           childGender,
           childStory,
+          childDateOfBirth,
+          childHobbies,
         });
       }
 
