@@ -136,10 +136,58 @@ interface DonationThankYouParams {
   childName: string;
   orphanageName: string;
   amount: number;
+  tipAmount?: number;
+  processorFee?: number;
   isRecurring: boolean;
   interval?: string;
   nextChargeDate?: Date;
   brevoApiKey: string;
+}
+
+/**
+ * Generate the payment breakdown HTML for donation emails
+ */
+function getPaymentBreakdown(
+  amount: number,
+  tipAmount?: number,
+  processorFee?: number
+): string {
+  const hasTip = tipAmount && tipAmount > 0;
+  const hasFee = processorFee && processorFee > 0;
+  const totalAmount = amount + (tipAmount || 0) + (processorFee || 0);
+
+  let breakdown = `
+    <p style="margin: 0; color: #555;">
+      <strong>Donation Amount:</strong> ${formatNGN(amount)}
+    </p>
+  `;
+
+  if (hasTip) {
+    breakdown += `
+      <p style="margin: 8px 0 0 0; color: #555;">
+        <strong>Tip Amount:</strong> ${formatNGN(tipAmount)}
+      </p>
+    `;
+  }
+
+  if (hasFee) {
+    breakdown += `
+      <p style="margin: 8px 0 0 0; color: #555;">
+        <strong>Transaction Fee:</strong> ${formatNGN(processorFee)}
+      </p>
+    `;
+  }
+
+  if (hasTip || hasFee) {
+    breakdown += `
+      <hr style="border: none; border-top: 1px solid #ccc; margin: 12px 0;" />
+      <p style="margin: 0; font-size: 18px; color: #1e3a8a;">
+        <strong>Total Charged:</strong> ${formatNGN(totalAmount)}
+      </p>
+    `;
+  }
+
+  return breakdown;
 }
 
 /**
@@ -151,13 +199,15 @@ export async function sendDonationThankYouEmail({
   childName,
   orphanageName,
   amount,
+  tipAmount,
+  processorFee,
   isRecurring,
   interval,
   nextChargeDate,
   brevoApiKey,
 }: DonationThankYouParams): Promise<void> {
-  const formattedAmount = formatNGN(amount);
   const greeting = donorName ? `Hello ${donorName},` : "Hello,";
+  const paymentBreakdown = getPaymentBreakdown(amount, tipAmount, processorFee);
 
   let bodyContent: string;
 
@@ -171,10 +221,8 @@ export async function sendDonationThankYouEmail({
       <p>${greeting}</p>
       <p>Thank you for your generous recurring donation to support <strong>${childName}</strong> at <strong>${orphanageName}</strong>!</p>
       <div style="background-color: #e8f0fe; padding: 16px; border-radius: 8px; margin: 20px 0;">
-        <p style="margin: 0; font-size: 18px; color: #1e3a8a;">
-          <strong>Amount:</strong> ${formattedAmount}
-        </p>
-        <p style="margin: 8px 0 0 0; color: #555;">
+        ${paymentBreakdown}
+        <p style="margin: 12px 0 0 0; color: #555;">
           <strong>Frequency:</strong> ${intervalText}
         </p>
         <p style="margin: 8px 0 0 0; color: #555;">
@@ -189,9 +237,7 @@ export async function sendDonationThankYouEmail({
       <p>${greeting}</p>
       <p>Thank you for your generous donation to support <strong>${childName}</strong> at <strong>${orphanageName}</strong>!</p>
       <div style="background-color: #e8f0fe; padding: 16px; border-radius: 8px; margin: 20px 0;">
-        <p style="margin: 0; font-size: 18px; color: #1e3a8a;">
-          <strong>Amount:</strong> ${formattedAmount}
-        </p>
+        ${paymentBreakdown}
       </div>
       <p>Your generosity makes a real difference in the life of a child in need. Thank you for being part of our community.</p>
     `;
@@ -216,6 +262,8 @@ interface RecurringChargeConfirmationParams {
   childName: string;
   orphanageName: string;
   amount: number;
+  tipAmount?: number;
+  processorFee?: number;
   interval: string;
   nextChargeDate: Date;
   brevoApiKey: string;
@@ -230,23 +278,23 @@ export async function sendRecurringChargeConfirmationEmail({
   childName,
   orphanageName,
   amount,
+  tipAmount,
+  processorFee,
   interval,
   nextChargeDate,
   brevoApiKey,
 }: RecurringChargeConfirmationParams): Promise<void> {
-  const formattedAmount = formatNGN(amount);
   const intervalText = getIntervalText(interval);
   const nextDateText = formatDateNG(nextChargeDate);
   const greeting = donorName ? `Hello ${donorName},` : "Hello,";
+  const paymentBreakdown = getPaymentBreakdown(amount, tipAmount, processorFee);
 
   const bodyContent = `
     <p>${greeting}</p>
     <p>Your ${intervalText.toLowerCase()} donation to support <strong>${childName}</strong> at <strong>${orphanageName}</strong> has been successfully processed.</p>
     <div style="background-color: #e8f0fe; padding: 16px; border-radius: 8px; margin: 20px 0;">
-      <p style="margin: 0; font-size: 18px; color: #1e3a8a;">
-        <strong>Amount charged:</strong> ${formattedAmount}
-      </p>
-      <p style="margin: 8px 0 0 0; color: #555;">
+      ${paymentBreakdown}
+      <p style="margin: 12px 0 0 0; color: #555;">
         <strong>Frequency:</strong> ${intervalText}
       </p>
       <p style="margin: 8px 0 0 0; color: #555;">

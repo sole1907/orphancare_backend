@@ -125,6 +125,8 @@ export const paystackWebhook = onRequest(
                 childName,
                 orphanageName,
                 amount: donationData.baseAmount || donationData.amount || 0,
+                tipAmount: donationData.tipAmount || 0,
+                processorFee: donationData.paystackFee || 0,
                 isRecurring: false,
                 brevoApiKey: brevoApiKey.value(),
               });
@@ -399,6 +401,8 @@ async function handleRecurringChargeSuccess(event: any, brevoApiKeyValue: string
     }
 
     const amount = plan.baseAmount || grossAmount || 0;
+    const tipAmount = plan.tipAmount || 0;
+    const processorFee = plan.paystackFeeEstimate || 0;
 
     if (isFirstCharge) {
       // First charge: send thank you for starting recurring donation
@@ -407,6 +411,8 @@ async function handleRecurringChargeSuccess(event: any, brevoApiKeyValue: string
         childName,
         orphanageName,
         amount,
+        tipAmount,
+        processorFee,
         isRecurring: true,
         interval: plan.interval,
         nextChargeDate: nextChargeAt,
@@ -420,6 +426,8 @@ async function handleRecurringChargeSuccess(event: any, brevoApiKeyValue: string
         childName,
         orphanageName,
         amount,
+        tipAmount,
+        processorFee,
         interval: plan.interval,
         nextChargeDate: nextChargeAt,
         brevoApiKey: brevoApiKeyValue,
